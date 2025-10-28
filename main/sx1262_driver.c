@@ -151,13 +151,26 @@ esp_err_t sx1262_set_tx(uint32_t timeout_in_ms)
     return ESP_OK;
 }
 
-esp_err_t sx1262_read_buffer(uint8_t *buffer, uint8_t size)
+esp_err_t sx1262_read_buffer(uint8_t *buffer, uint8_t *len)
 {
     // 1) Get RX buffer status (single transfer)
     uint8_t tx_status[3] = { SX1262_OPCODE_GET_RX_BUFFER_STATUS, 0x00, 0x00 };
     uint8_t rx_status[3] = {0};
     sx1262_hal_transfer(tx_status, rx_status, sizeof(tx_status));
-    uint8_t rx_start_buffer_pointer = rx_status[2]; // rx_status[1]=len, [2]=ptr
+    
+    uint8_t payload_len = rx_status[1]; // Actual received length
+    uint8_t rx_start_buffer_pointer = rx_status[2]; // Buffer pointer
+    
+    ESP_LOGI(TAG, "RX buffer status: len=%d, offset=%d", payload_len, rx_start_buffer_pointer);
+    
+    if (payload_len == 0) {
+        ESP_LOGW(TAG, "No data received");
+        *len = 0;
+        return ESP_OK;
+    }
+    
+    // Limit to max buffer size
+    if (payload_len > 255) payload_len = 255;
 
     // 2) Read buffer: opcode + offset + dummy, read back status+data
     uint8_t tx[3 + 255] = {0};
@@ -165,9 +178,14 @@ esp_err_t sx1262_read_buffer(uint8_t *buffer, uint8_t size)
     tx[0] = SX1262_OPCODE_READ_BUFFER;
     tx[1] = rx_start_buffer_pointer;
     tx[2] = 0x00; // dummy
-    sx1262_hal_transfer(tx, rx, 3 + size);
-    // rx[0]=status, rx[1]=first data? Per datasheet after dummy, data starts.
-    memcpy(buffer, &rx[3], size);
+    sx1262_hal_transfer(tx, rx, 3 + payload_len);
+    
+    // rx[0]=status, rx[1]=first data after dummy
+    // Skip status byte and first data byte (status), copy from rx[3]
+    memcpy(buffer, &rx[3], payload_len);
+    *len = payload_len;
+    
+    ESP_LOGI(TAG, "Read %d bytes from buffer", payload_len);
     
     return ESP_OK;
 }
@@ -197,9 +215,11 @@ uint16_t sx1262_get_irq_status(void)
     // Byte 2: IRQ[7:0]  (low byte)
     uint16_t irq_status = ((uint16_t)rx[1] << 8) | rx[2];
     
-    // Check for suspicious patterns - but don't filter them yet
-    ESP_LOGI(TAG, "IRQ raw: [0x%02X] [0x%02X] [0x%02X] → IRQ=0x%04X", 
-             rx[0], rx[1], rx[2], irq_status);
+    // Only log if there's an actual IRQ (not 0)
+    if (irq_status != 0) {
+        ESP_LOGD(TAG, "IRQ raw: [0x%02X] [0x%02X] [0x%02X] → IRQ=0x%04X", 
+                 rx[0], rx[1], rx[2], irq_status);
+    }
     
     return irq_status;
 }
