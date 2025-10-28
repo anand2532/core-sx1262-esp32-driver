@@ -42,10 +42,10 @@ typedef struct {
     uint8_t tx_power;           // TX power in dBm (0-22)
 } lora_config_t;
 
-// Communication settings - match other module  
-#define NETWORK_ID     0  // Match with other module
-#define NODE_ADDRESS   1  // Match with other module
-#define AIR_SPEED      2400 // 2400 bps
+// Communication settings - MUST match UART module exactly
+#define NETWORK_ID     0      // Must match cfg_reg[5] from UART module
+#define NODE_ADDRESS   1      // Use 1, UART module uses 0
+#define AIR_SPEED      2400   // 2400 bps - matches UART module air_speed parameter
 
 static lora_config_t lora_config = {
     .frequency = 868100000,           // 868.1 MHz
@@ -296,16 +296,20 @@ void app_main(void)
         return;
     }
     
-    ESP_LOGI(TAG, "\n=== LoRa Configuration ===");
-    ESP_LOGI(TAG, "Frequency: %lu Hz", lora_config.frequency);
+    ESP_LOGI(TAG, "\n============================================");
+    ESP_LOGI(TAG, "  LoRa Configuration (Matching UART Module)");
+    ESP_LOGI(TAG, "============================================");
+    ESP_LOGI(TAG, "Frequency: %lu Hz (868.1 MHz)", lora_config.frequency);
     ESP_LOGI(TAG, "Spreading Factor: %d (SF%d)", lora_config.spreading_factor, lora_config.spreading_factor);
-    ESP_LOGI(TAG, "Bandwidth: 7.8 kHz (ultra low data rate)");
-    ESP_LOGI(TAG, "Coding Rate: 4/8 (maximum robustness)");
+    ESP_LOGI(TAG, "Bandwidth: 7.8 kHz");
+    ESP_LOGI(TAG, "Coding Rate: 4/8");
     ESP_LOGI(TAG, "TX Power: %d dBm", lora_config.tx_power);
-    ESP_LOGI(TAG, "Network ID: %d", NETWORK_ID);
+    ESP_LOGI(TAG, "");
+    ESP_LOGI(TAG, "Network ID: %d (must match)", NETWORK_ID);
     ESP_LOGI(TAG, "Node Address: %d", NODE_ADDRESS);
     ESP_LOGI(TAG, "Air Speed: %d bps", AIR_SPEED);
-    ESP_LOGI(TAG, "\n=== Node Ready! ===\n");
+    ESP_LOGI(TAG, "============================================");
+    ESP_LOGI(TAG, "Node Ready! Waiting for messages...\n");
     
     // Main communication loop
     uint8_t tx_buffer[] = "Hello LoRa!";
@@ -314,8 +318,21 @@ void app_main(void)
     int tx_count = 0;
     
     while (1) {
+        // === RECEIVE (Listen first) ===
+        ESP_LOGI(TAG, "[RX] Listening for data from UART module...");
+        ret = lora_receive(rx_buffer, &rx_len);
+        if (ret == ESP_OK) {
+            // UART module sends: [dest_addr_H][dest_addr_L][freq_offset][src_addr_H][src_addr_L][src_freq_offset][payload]
+            // Try to parse it
+            rx_buffer[rx_len] = '\0';
+            ESP_LOGI(TAG, "✓ RX successful: %d bytes", rx_len);
+            ESP_LOGI(TAG, "  Data: %.*s", rx_len > 6 ? rx_len - 6 : rx_len, &rx_buffer[6]);
+        }
+        
+        vTaskDelay(pdMS_TO_TICKS(2000));  // Wait 2 seconds
+        
         // === TRANSMIT ===
-        ESP_LOGI(TAG, "[TX #%d] Sending: %s", ++tx_count, tx_buffer);
+        ESP_LOGI(TAG, "[TX #%d] Sending to UART module: %s", ++tx_count, tx_buffer);
         ret = lora_send(tx_buffer, strlen((char*)tx_buffer));
         if (ret == ESP_OK) {
             ESP_LOGI(TAG, "✓ TX successful");
@@ -323,18 +340,6 @@ void app_main(void)
             ESP_LOGE(TAG, "✗ TX failed");
         }
         
-        vTaskDelay(pdMS_TO_TICKS(5000));  // Wait 5 seconds
-        
-        // === RECEIVE ===
-        ESP_LOGI(TAG, "[RX] Listening for data...");
-        ret = lora_receive(rx_buffer, &rx_len);
-        if (ret == ESP_OK) {
-            rx_buffer[rx_len] = '\0';  // Null terminate string
-            ESP_LOGI(TAG, "✓ RX successful: %d bytes - %s", rx_len, rx_buffer);
-        } else {
-            ESP_LOGI(TAG, "✗ No data received (timeout)");
-        }
-        
-        vTaskDelay(pdMS_TO_TICKS(15000));  // Wait 15 seconds before next cycle
+        vTaskDelay(pdMS_TO_TICKS(15000));  // Wait 15 seconds
     }
 }
