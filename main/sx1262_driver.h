@@ -114,6 +114,8 @@ esp_err_t sx1262_set_dio_irq_params(uint16_t irq_mask);
 esp_err_t sx1262_set_regulator_mode(uint8_t regulator_mode);
 esp_err_t sx1262_get_status(void);
 uint16_t sx1262_get_chip_error(void);
+esp_err_t sx1262_check_status_and_mode(void);
+uint8_t sx1262_get_chip_mode(void);
 
 #ifdef __cplusplus
 }
