@@ -34,17 +34,15 @@ extern "C" {
 #define SX1262_OPCODE_CLR_IRQ_STATUS              0x02
 #define SX1262_OPCODE_SET_LORA_PARAMS             0x8B
 #define SX1262_OPCODE_SET_PACKET_TYPE             0x8A
-#define SX1262_OPCODE_WRITE_BUFFER                0x0E
 #define SX1262_OPCODE_GET_STATUS                  0xC0
-#define SX1262_OPCODE_GET_STATUS_REG              0x03
 #define SX1262_OPCODE_SET_PA_CONFIG               0x95
 #define SX1262_OPCODE_SET_REGULATOR_MODE          0x96
 #define SX1262_OPCODE_SET_RF_FREQUENCY            0x86
 #define SX1262_OPCODE_SET_TX_PARAMS               0x8E
 #define SX1262_OPCODE_SET_DIO_IRQ_PARAMS          0x08
-#define SX1262_OPCODE_SET_REGULATOR_MODE          0x96
-#define SX1262_OPCODE_SET_PA_CONFIG               0x95
 #define SX1262_OPCODE_GET_PACKET_STATUS           0x14
+#define SX1262_OPCODE_SET_LORA_PACKET_PARAMS      0x8C
+#define SX1262_OPCODE_SET_BUFFER_BASE_ADDRESS     0x8F
 
 /**
  * SX1262 Registers
@@ -107,7 +105,7 @@ esp_err_t sx1262_set_lora_params(uint8_t spreading_factor, uint8_t bandwidth, ui
 esp_err_t sx1262_set_tx_params(uint8_t tx_power);
 esp_err_t sx1262_set_rx(uint32_t timeout_in_ms);
 esp_err_t sx1262_set_tx(uint32_t timeout_in_ms);
-esp_err_t sx1262_read_buffer(uint8_t *buffer, uint8_t size);
+esp_err_t sx1262_read_buffer(uint8_t *buffer, uint8_t *len);
 esp_err_t sx1262_write_buffer(uint8_t *buffer, uint8_t size);
 uint16_t sx1262_get_irq_status(void);
 esp_err_t sx1262_clear_irq_status(uint16_t irq_mask);
