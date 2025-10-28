@@ -253,6 +253,31 @@ esp_err_t sx1262_hal_read(uint8_t *buffer, uint8_t size)
     return ESP_OK;
 }
 
+esp_err_t sx1262_hal_transfer(const uint8_t *tx, uint8_t *rx, uint16_t len)
+{
+    // Wait for BUSY to be LOW
+    int busy_timeout = 1000;
+    while (gpio_get_level(gpio_busy) == 1 && busy_timeout-- > 0) {
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+    if (busy_timeout <= 0) {
+        ESP_LOGE(TAG, "BUSY pin HIGH before transfer");
+        return ESP_ERR_TIMEOUT;
+    }
+
+    spi_transaction_t t = {
+        .length = len * 8,
+        .tx_buffer = tx,
+        .rx_buffer = rx,
+    };
+    esp_err_t ret = spi_device_transmit(spi_handle, &t);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "SPI transfer failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    return ESP_OK;
+}
+
 void sx1262_hal_set_tx_mode(void)
 {
     gpio_set_level(gpio_txen, 1);
