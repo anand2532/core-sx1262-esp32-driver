@@ -75,9 +75,9 @@ esp_err_t lora_init(const lora_config_t *config)
     bool busy_after_reset = gpio_get_level(SX1262_BUSY);
     ESP_LOGI(TAG, "BUSY pin after reset: %s", busy_after_reset ? "HIGH" : "LOW");
     
-    // Try to get chip status with timeout handling
-    ESP_LOGI(TAG, "Checking chip status...");
-    sx1262_get_status();
+    // Check chip status and mode
+    ESP_LOGI(TAG, "Checking chip status and mode...");
+    sx1262_check_status_and_mode();
     
     // Set regulator mode (LDO)
     uint8_t reg_cmd[2] = {SX1262_OPCODE_SET_REGULATOR_MODE, 0x01};
@@ -203,7 +203,17 @@ esp_err_t lora_send(uint8_t *data, uint8_t len)
     // Check final IRQ status and error
     irq_status = sx1262_get_irq_status();
     uint16_t chip_error = sx1262_get_chip_error();
-    ESP_LOGE(TAG, "TX timeout - IRQ: 0x%04X, Error: 0x%04X", irq_status, chip_error);
+    uint8_t chip_mode = sx1262_get_chip_mode();
+    
+    ESP_LOGE(TAG, "TX timeout!");
+    ESP_LOGE(TAG, "  IRQ Status: 0x%04X", irq_status);
+    ESP_LOGE(TAG, "  Chip Error: 0x%04X", chip_error);
+    ESP_LOGE(TAG, "  Chip Mode: %d", chip_mode);
+    
+    // Reset and try to get back to standby
+    sx1262_clear_irq_status(0xFFFF);
+    sx1262_set_standby();
+    
     return ESP_ERR_TIMEOUT;
 }
 
