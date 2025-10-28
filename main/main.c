@@ -66,14 +66,29 @@ esp_err_t lora_init(const lora_config_t *config)
 {
     ESP_LOGI(TAG, "Initializing LoRa...");
     
-    // Reset module
-    ESP_LOGI(TAG, "Resetting module...");
-    sx1262_hal_reset();
-    vTaskDelay(pdMS_TO_TICKS(100));
+    // Reset module - longer reset sequence for stuck BUSY
+    ESP_LOGI(TAG, "Resetting module (forcing RST LOW for 10ms)...");
+    gpio_set_level(SX1262_RST, 0);
+    vTaskDelay(pdMS_TO_TICKS(10));
+    gpio_set_level(SX1262_RST, 1);
+    vTaskDelay(pdMS_TO_TICKS(150)); // Wait for chip to be ready
     
-    // Check BUSY pin status
+    // Check BUSY pin status - it should be LOW after reset
     bool busy_after_reset = gpio_get_level(SX1262_BUSY);
-    ESP_LOGI(TAG, "BUSY pin after reset: %s", busy_after_reset ? "HIGH" : "LOW");
+    ESP_LOGI(TAG, "BUSY pin after reset: %s", busy_after_reset ? "HIGH (PROBLEM!)" : "LOW (OK)");
+    
+    if (busy_after_reset) {
+        ESP_LOGW(TAG, "BUSY is HIGH - trying multiple reset pulses...");
+        for (int i = 0; i < 3; i++) {
+            gpio_set_level(SX1262_RST, 0);
+            vTaskDelay(pdMS_TO_TICKS(20));
+            gpio_set_level(SX1262_RST, 1);
+            vTaskDelay(pdMS_TO_TICKS(100));
+            bool busy = gpio_get_level(SX1262_BUSY);
+            ESP_LOGI(TAG, "Reset pulse %d: BUSY = %s", i+1, busy ? "HIGH" : "LOW");
+            if (!busy) break;
+        }
+    }
     
     // Check chip status and mode
     ESP_LOGI(TAG, "Checking chip status and mode...");
@@ -103,6 +118,14 @@ esp_err_t lora_init(const lora_config_t *config)
     sx1262_set_packet_type(0x01);
     vTaskDelay(pdMS_TO_TICKS(10));
     
+    // If module uses TCXO, power it via DIO3 at 3.3V and wait ~5ms (0x0140 steps of 15.625us)
+    uint8_t tcxo_cmd[4] = { SX1262_OPCODE_SET_DIO3_AS_TCXO_CTRL, 0x07, 0x01, 0x40 };
+    sx1262_hal_transfer(tcxo_cmd, NULL, sizeof(tcxo_cmd));
+    vTaskDelay(pdMS_TO_TICKS(10));
+    // Ensure XOSC standby after TCXO startup
+    sx1262_set_standby();
+    vTaskDelay(pdMS_TO_TICKS(10));
+
     // Set RF frequency
     sx1262_set_rf_frequency(config->frequency);
     vTaskDelay(pdMS_TO_TICKS(10));
@@ -154,6 +177,11 @@ esp_err_t lora_init(const lora_config_t *config)
     // Set buffer base addresses (TX at 0, RX at 128 to avoid overlap)
     uint8_t buf_cmd[3] = {SX1262_OPCODE_SET_BUFFER_BASE_ADDRESS, 0x00, 0x80};
     sx1262_hal_transfer(buf_cmd, NULL, 3);
+    vTaskDelay(pdMS_TO_TICKS(10));
+
+    // Calibrate image (per band). For 862–1020 MHz use 0xD7 0xDB.
+    uint8_t calib_img[3] = { 0x98, 0xD7, 0xDB };
+    sx1262_hal_transfer(calib_img, NULL, sizeof(calib_img));
     vTaskDelay(pdMS_TO_TICKS(10));
     
     ESP_LOGI(TAG, "LoRa initialized");
@@ -333,12 +361,29 @@ void app_main(void)
         .dio3 = GPIO_NUM_NC  // Not present on Waveshare Core1262
     };
     
-    // Initialize HAL (Hardware Abstraction Layer)
+    // Diagnostic: Check all GPIO states before initialization
+    ESP_LOGI(TAG, "GPIO States (before init):");
+    ESP_LOGI(TAG, "  BUSY (GPIO%d): %d", SX1262_BUSY, gpio_get_level(SX1262_BUSY));
+    ESP_LOGI(TAG, "  RST (GPIO%d): %d", SX1262_RST, gpio_get_level(SX1262_RST));
+    ESP_LOGI(TAG, "  RXEN (GPIO%d): %d", SX1262_RXEN, gpio_get_level(SX1262_RXEN));
+    ESP_LOGI(TAG, "  TXEN (GPIO%d): %d", SX1262_TXEN, gpio_get_level(SX1262_TXEN));
+    ESP_LOGI(TAG, "  DIO1 (GPIO%d): %d", SX1262_DIO1, gpio_get_level(SX1262_DIO1));
+    ESP_LOGI(TAG, "  DIO2 (GPIO%d): %d", SX1262_DIO2, gpio_get_level(SX1262_DIO2));
+    
+    // Initialize HAL (Hardware Abstraction Layer) first
+    ESP_LOGI(TAG, "Initializing HAL...");
     ret = sx1262_hal_init(&hal_config);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "HAL initialization failed");
         return;
     }
+    
+    // Set initial states for RF control pins (RXEN/TXEN should be LOW initially)
+    gpio_set_level(SX1262_TXEN, 0);
+    gpio_set_level(SX1262_RXEN, 0);
+    vTaskDelay(pdMS_TO_TICKS(10));
+    
+    ESP_LOGI(TAG, "Control pins initialized (TXEN=LOW, RXEN=LOW)");
     
     // Initialize driver
     ret = sx1262_driver_init();

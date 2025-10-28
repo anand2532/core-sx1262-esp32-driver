@@ -123,7 +123,7 @@ esp_err_t sx1262_hal_init(const sx1262_hal_config_t *config)
     
     // Configure SPI device
     spi_device_interface_config_t devcfg = {
-        .clock_speed_hz = 8 * 1000 * 1000,  // 8MHz (max is 18MHz)
+        .clock_speed_hz = 1 * 1000 * 1000,  // 1MHz for stability during bring-up
         .mode = 0,                           // SPI mode 0
         .spics_io_num = config->spi_cs,
         .queue_size = 7,
@@ -216,8 +216,8 @@ esp_err_t sx1262_hal_write(uint8_t *buffer, uint8_t size)
         return ret;
     }
     
-    // Wait for module to process the command
-    vTaskDelay(pdMS_TO_TICKS(1));
+    // Wait for module to process the command (BUSY will go high then low)
+    sx1262_hal_wait_busy();
     
     return ESP_OK;
 }
@@ -251,8 +251,8 @@ esp_err_t sx1262_hal_read(uint8_t *buffer, uint8_t size)
         return ret;
     }
     
-    // Small delay after read
-    vTaskDelay(pdMS_TO_TICKS(1));
+    // Wait for BUSY to return low after command completes
+    sx1262_hal_wait_busy();
     
     return ESP_OK;
 }
@@ -279,6 +279,8 @@ esp_err_t sx1262_hal_transfer(const uint8_t *tx, uint8_t *rx, uint16_t len)
         ESP_LOGE(TAG, "SPI transfer failed: %s", esp_err_to_name(ret));
         return ret;
     }
+    // Ensure the radio completed processing before next command
+    sx1262_hal_wait_busy();
     return ESP_OK;
 }
 
