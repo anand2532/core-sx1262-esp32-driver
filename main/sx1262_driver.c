@@ -186,29 +186,20 @@ esp_err_t sx1262_write_buffer(uint8_t *buffer, uint8_t size)
 
 uint16_t sx1262_get_irq_status(void)
 {
-    uint8_t tx[4] = { SX1262_OPCODE_GET_IRQ_STATUS, 0x00, 0x00, 0x00 };
-    uint8_t rx[4] = {0};
-    // Full-duplex single transaction: opcode + 3 dummy, read 4 bytes
-    // rx[0] = RFU/Status, rx[1] = IRQ_L, rx[2] = IRQ_H
+    uint8_t tx[3] = { SX1262_OPCODE_GET_IRQ_STATUS, 0x00, 0x00 };
+    uint8_t rx[3] = {0};
+    // Full-duplex single transaction: opcode + 2 dummy, read 3 bytes (Status + IRQ)
     sx1262_hal_transfer(tx, rx, sizeof(tx));
+
+    // According to datasheet GetIrqStatus response:
+    // Byte 0: Status (CMD_ERROR, etc.)
+    // Byte 1: IRQ[15:8] (high byte)
+    // Byte 2: IRQ[7:0]  (low byte)
+    uint16_t irq_status = ((uint16_t)rx[1] << 8) | rx[2];
     
-    // IRQ is in bytes 1 and 2
-    uint16_t irq_status = ((uint16_t)rx[2] << 8) | rx[1];
-    
-    // Check for bad reads - 0xA8 is suspicious (might be floating line or stuck state)
-    bool bad_read = (rx[1] == 0xA8 && rx[2] == 0xA8) || (rx[0] == 0xA8);
-    
-    if (bad_read) {
-        // Module is not responding correctly - log once per second
-        static int log_count = 0;
-        if ((log_count++ % 10) == 0) {  // Log every 10th call
-            ESP_LOGW(TAG, "Bad IRQ read: [0x%02X] [0x%02X] [0x%02X] - Module may not be responding", 
-                     rx[0], rx[1], rx[2]);
-        }
-    } else {
-        ESP_LOGI(TAG, "IRQ Status: [0x%02X] [0x%02X] [0x%02X] → 0x%04X", 
-                 rx[0], rx[1], rx[2], irq_status);
-    }
+    // Check for suspicious patterns - but don't filter them yet
+    ESP_LOGI(TAG, "IRQ raw: [0x%02X] [0x%02X] [0x%02X] → IRQ=0x%04X", 
+             rx[0], rx[1], rx[2], irq_status);
     
     return irq_status;
 }
@@ -259,22 +250,20 @@ esp_err_t sx1262_get_status(void)
 
 esp_err_t sx1262_check_status_and_mode(void)
 {
-    uint8_t cmd = SX1262_OPCODE_GET_STATUS;
-    uint8_t status[1];
+    // Single transaction: opcode + dummy byte, read status
+    uint8_t tx[2] = { SX1262_OPCODE_GET_STATUS, 0x00 };
+    uint8_t rx[2] = {0};
+    sx1262_hal_transfer(tx, rx, sizeof(tx));
     
-    sx1262_hal_write(&cmd, 1);
-    vTaskDelay(pdMS_TO_TICKS(1));
-    sx1262_hal_read(status, 1);
-    
-    uint8_t chip_mode = (status[0] >> 2) & 0x07;
-    uint8_t chip_status = status[0] & 0x03;
+    uint8_t chip_mode = (rx[0] >> 2) & 0x07;
+    uint8_t chip_status = rx[0] & 0x03;
     
     const char* mode_str[] = {
         "Sleep", "RC running", "HXTAL", "Reset", 
         "Standby RC", "Standby XOSC", "FS", "RX", "TX"
     };
     
-    ESP_LOGI(TAG, "Chip Status: 0x%02X", status[0]);
+    ESP_LOGI(TAG, "Chip Status: 0x%02X", rx[0]);
     ESP_LOGI(TAG, "  - Mode: %s (%d)", mode_str[chip_mode % 9], chip_mode);
     ESP_LOGI(TAG, "  - Status bits: 0x%02X", chip_status);
     
@@ -283,14 +272,11 @@ esp_err_t sx1262_check_status_and_mode(void)
 
 uint8_t sx1262_get_chip_mode(void)
 {
-    uint8_t cmd = SX1262_OPCODE_GET_STATUS;
-    uint8_t status[1];
+    uint8_t tx[2] = { SX1262_OPCODE_GET_STATUS, 0x00 };
+    uint8_t rx[2] = {0};
+    sx1262_hal_transfer(tx, rx, sizeof(tx));
     
-    sx1262_hal_write(&cmd, 1);
-    vTaskDelay(pdMS_TO_TICKS(1));
-    sx1262_hal_read(status, 1);
-    
-    return (status[0] >> 2) & 0x07;
+    return (rx[0] >> 2) & 0x07;
 }
 
 uint16_t sx1262_get_chip_error(void)
