@@ -79,7 +79,7 @@ esp_err_t lora_init(const lora_config_t *config)
     ESP_LOGI(TAG, "Checking chip status and mode...");
     sx1262_check_status_and_mode();
     
-    // Set regulator mode (LDO)
+    // Set regulator mode (LDO = 0x01, use DCDC if available = 0x00)
     uint8_t reg_cmd[2] = {SX1262_OPCODE_SET_REGULATOR_MODE, 0x01};
     sx1262_hal_write(reg_cmd, 2);
     vTaskDelay(pdMS_TO_TICKS(5));
@@ -95,12 +95,12 @@ esp_err_t lora_init(const lora_config_t *config)
     sx1262_hal_write(irq_cmd, 5);
     vTaskDelay(pdMS_TO_TICKS(5));
     
-    // Set to standby mode
+    // Set to standby XOSC (host controlled, never sleep)
     sx1262_set_standby();
     vTaskDelay(pdMS_TO_TICKS(10));
     
-    // Configure as LoRa packet type (1 = LoRa, 0 = GFSK)
-    sx1262_set_packet_type(1);
+    // Configure as LoRa packet type (LoRa = 0x01)
+    sx1262_set_packet_type(0x01);
     vTaskDelay(pdMS_TO_TICKS(10));
     
     // Set RF frequency
@@ -115,6 +115,11 @@ esp_err_t lora_init(const lora_config_t *config)
     );
     vTaskDelay(pdMS_TO_TICKS(10));
     
+    // DIO2 as RF switch control (set by many reference designs)
+    uint8_t dio2_cmd[2] = { SX1262_OPCODE_SET_DIO2_AS_RF_SWITCH_CTRL, 0x01 };
+    sx1262_hal_transfer(dio2_cmd, NULL, sizeof(dio2_cmd));
+    vTaskDelay(pdMS_TO_TICKS(10));
+
     // Configure LoRa packet parameters
     // Preamble: 8 symbols, Header: explicit, Payload: variable length, CRC: on
     // Format: [opcode] [preamble_H] [preamble_L] [header] [max_length] [crc] [invert_iq]
@@ -129,11 +134,10 @@ esp_err_t lora_init(const lora_config_t *config)
     sx1262_hal_transfer(cmd, NULL, 7);
     vTaskDelay(pdMS_TO_TICKS(10));
     
-    // Set PA configuration
-    // For 20-22 dBm: PaSel = 0x04 (use HP PA), Power = 0x07, HP_MAX = 0x01
-    // This configuration allows high power transmission
-    uint8_t pa_cmd[4] = {SX1262_OPCODE_SET_PA_CONFIG, 0x04, 0x07, 0x01};
-    sx1262_hal_transfer(pa_cmd, NULL, 4);
+    // Set PA configuration for HP PA
+    // Params: PaDutyCycle=0x04, HpMax=0x07, DeviceSel=0x00, PaLut=0x01 per app note
+    uint8_t pa_cmd[5] = {SX1262_OPCODE_SET_PA_CONFIG, 0x04, 0x07, 0x00, 0x01};
+    sx1262_hal_transfer(pa_cmd, NULL, 5);
     vTaskDelay(pdMS_TO_TICKS(10));
     
     ESP_LOGI(TAG, "Configured for ultra-long range:");
@@ -143,12 +147,12 @@ esp_err_t lora_init(const lora_config_t *config)
     ESP_LOGI(TAG, "  - Coding Rate: 4/8 (most robust)");
     ESP_LOGI(TAG, "  - TX Power: %d dBm (maximum)", config->tx_power);
     
-    // Set TX parameters (ramp time: 0x07 = 64 us)
+    // Set TX parameters (ramp time: 0x07 = 200 us typical; keep 0x07 as used in driver)
     sx1262_set_tx_params(config->tx_power);
     vTaskDelay(pdMS_TO_TICKS(10));
     
-    // Set buffer base addresses (TX and RX both start at offset 0)
-    uint8_t buf_cmd[3] = {0x8F, 0x00, 0x00};  // SET_BUFFER_BASE_ADDRESS
+    // Set buffer base addresses (TX at 0, RX at 128 to avoid overlap)
+    uint8_t buf_cmd[3] = {SX1262_OPCODE_SET_BUFFER_BASE_ADDRESS, 0x00, 0x80};
     sx1262_hal_transfer(buf_cmd, NULL, 3);
     vTaskDelay(pdMS_TO_TICKS(10));
     
@@ -205,7 +209,7 @@ esp_err_t lora_send(uint8_t *data, uint8_t len)
             ESP_LOGE(TAG, "TX timeout IRQ received");
             sx1262_clear_irq_status(SX1262_IRQ_TIMEOUT);
             return ESP_ERR_TIMEOUT;
-        }
+        } 
         
         if (irq_status & SX1262_IRQ_CRC_ERROR) {
             ESP_LOGE(TAG, "CRC error on TX");
@@ -235,8 +239,8 @@ esp_err_t lora_send(uint8_t *data, uint8_t len)
     uint16_t chip_error = sx1262_get_chip_error();
     ESP_LOGE(TAG, "  Chip Error: 0x%04X", chip_error);
     
-    // Reset back to standby
-    ESP_LOGW(TAG, "Resetting to STDBY mode...");
+    // Return to STDBY_XOSC and avoid sleep
+    ESP_LOGW(TAG, "Resetting to STDBY_XOSC mode...");
     sx1262_clear_irq_status(0xFFFF);
     vTaskDelay(pdMS_TO_TICKS(10));
     sx1262_set_standby();
