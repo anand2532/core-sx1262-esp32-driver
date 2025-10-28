@@ -182,37 +182,65 @@ esp_err_t lora_send(uint8_t *data, uint8_t len)
     // Wait for transmission to complete
     int timeout = 5000;  // 5 second timeout
     uint16_t irq_status;
+    
+    ESP_LOGI(TAG, "Monitoring IRQ status...");
+    
     while (timeout-- > 0) {
         irq_status = sx1262_get_irq_status();
         
-        if (irq_status & SX1262_IRQ_TX_DONE) {
-            sx1262_clear_irq_status(SX1262_IRQ_TX_DONE);
-            ESP_LOGI(TAG, "TX completed successfully");
-            return ESP_OK;
-        }
-        
-        if (irq_status & SX1262_IRQ_TIMEOUT) {
-            ESP_LOGE(TAG, "TX timeout IRQ");
-            sx1262_clear_irq_status(SX1262_IRQ_TIMEOUT);
-            return ESP_ERR_TIMEOUT;
+        // Check for any valid IRQ (not bad reads)
+        if (irq_status != 0xA8A8 && irq_status != 0x28A8) {
+            
+            if (irq_status & SX1262_IRQ_TX_DONE) {
+                sx1262_clear_irq_status(SX1262_IRQ_TX_DONE);
+                ESP_LOGI(TAG, "✓ TX completed successfully!");
+                return ESP_OK;
+            }
+            
+            if (irq_status & SX1262_IRQ_TIMEOUT) {
+                ESP_LOGE(TAG, "TX timeout IRQ received");
+                sx1262_clear_irq_status(SX1262_IRQ_TIMEOUT);
+                return ESP_ERR_TIMEOUT;
+            }
+            
+            if (irq_status != 0) {
+                ESP_LOGI(TAG, "IRQ status: 0x%04X (but not TX_DONE or TIMEOUT)", irq_status);
+            }
         }
         
         vTaskDelay(pdMS_TO_TICKS(10));
     }
     
-    // Check final IRQ status and error
+    // Final diagnostic check
     irq_status = sx1262_get_irq_status();
-    uint16_t chip_error = sx1262_get_chip_error();
+    
+    ESP_LOGE(TAG, "==============================================");
+    ESP_LOGE(TAG, "TX TIMEOUT - Diagnostic Information:");
+    ESP_LOGE(TAG, "  Final IRQ: 0x%04X", irq_status);
+    ESP_LOGE(TAG, "==============================================");
+    
+    // Get chip mode
     uint8_t chip_mode = sx1262_get_chip_mode();
+    const char* mode_names[] = {
+        "SLEEP", "RC_RUN", "HXTAL", "RESET", 
+        "STDBY_RC", "STDBY_XOSC", "FS", "RX", "TX"
+    };
+    ESP_LOGE(TAG, "  Chip Mode: %d (%s)", chip_mode, mode_names[chip_mode < 9 ? chip_mode : 8]);
     
-    ESP_LOGE(TAG, "TX timeout!");
-    ESP_LOGE(TAG, "  IRQ Status: 0x%04X", irq_status);
+    // Get chip error
+    uint16_t chip_error = sx1262_get_chip_error();
     ESP_LOGE(TAG, "  Chip Error: 0x%04X", chip_error);
-    ESP_LOGE(TAG, "  Chip Mode: %d", chip_mode);
     
-    // Reset and try to get back to standby
+    // Reset back to standby
+    ESP_LOGW(TAG, "Resetting to STDBY mode...");
     sx1262_clear_irq_status(0xFFFF);
+    vTaskDelay(pdMS_TO_TICKS(10));
     sx1262_set_standby();
+    vTaskDelay(pdMS_TO_TICKS(50));
+    
+    // Check mode again
+    chip_mode = sx1262_get_chip_mode();
+    ESP_LOGI(TAG, "  After reset, Chip Mode: %d (%s)", chip_mode, mode_names[chip_mode < 9 ? chip_mode : 8]);
     
     return ESP_ERR_TIMEOUT;
 }
