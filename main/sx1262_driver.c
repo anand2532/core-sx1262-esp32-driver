@@ -200,14 +200,22 @@ uint16_t sx1262_get_irq_status(void)
     
     // Write command
     sx1262_hal_write(&cmd, 1);
+    vTaskDelay(pdMS_TO_TICKS(1));
     
     // Read response (should be 3 bytes: Status[7:0], IRQ_0[7:0], IRQ_0[15:8])
     sx1262_hal_read(status, 3);
     
-    // IRQ is in bytes 1 and 2 (little endian)
+    // IRQ is in bytes 1 and 2
     uint16_t irq_status = ((uint16_t)status[2] << 8) | status[1];
     
-    ESP_LOGD(TAG, "IRQ Status: 0x%02X 0x%02X 0x%02X → 0x%04X", status[0], status[1], status[2], irq_status);
+    if ((status[1] == 0xA8 && status[2] == 0xA8) || (status[0] == 0xA8 && status[1] == 0xA8)) {
+        // Bad read - log the raw bytes
+        ESP_LOGW(TAG, "Bad IRQ read: 0x%02X 0x%02X 0x%02X - module may not be responding correctly", 
+                 status[0], status[1], status[2]);
+    } else {
+        ESP_LOGD(TAG, "IRQ Status: [0x%02X] [0x%02X] [0x%02X] → 0x%04X", 
+                 status[0], status[1], status[2], irq_status);
+    }
     
     return irq_status;
 }
@@ -248,10 +256,49 @@ esp_err_t sx1262_set_regulator_mode(uint8_t regulator_mode)
 esp_err_t sx1262_get_status(void)
 {
     uint8_t cmd = SX1262_OPCODE_GET_STATUS;
-    uint8_t status;
+    uint8_t status[1];
     sx1262_hal_write(&cmd, 1);
-    sx1262_hal_read(&status, 1);
+    sx1262_hal_read(status, 1);
+    
+    ESP_LOGD(TAG, "Chip Status: 0x%02X", status[0]);
+    
     return ESP_OK;
+}
+
+esp_err_t sx1262_check_status_and_mode(void)
+{
+    uint8_t cmd = SX1262_OPCODE_GET_STATUS;
+    uint8_t status[1];
+    
+    sx1262_hal_write(&cmd, 1);
+    vTaskDelay(pdMS_TO_TICKS(1));
+    sx1262_hal_read(status, 1);
+    
+    uint8_t chip_mode = (status[0] >> 2) & 0x07;
+    uint8_t chip_status = status[0] & 0x03;
+    
+    const char* mode_str[] = {
+        "Sleep", "RC running", "HXTAL", "Reset", 
+        "Standby RC", "Standby XOSC", "FS", "RX", "TX"
+    };
+    
+    ESP_LOGI(TAG, "Chip Status: 0x%02X", status[0]);
+    ESP_LOGI(TAG, "  - Mode: %s (%d)", mode_str[chip_mode % 9], chip_mode);
+    ESP_LOGI(TAG, "  - Status bits: 0x%02X", chip_status);
+    
+    return ESP_OK;
+}
+
+uint8_t sx1262_get_chip_mode(void)
+{
+    uint8_t cmd = SX1262_OPCODE_GET_STATUS;
+    uint8_t status[1];
+    
+    sx1262_hal_write(&cmd, 1);
+    vTaskDelay(pdMS_TO_TICKS(1));
+    sx1262_hal_read(status, 1);
+    
+    return (status[0] >> 2) & 0x07;
 }
 
 uint16_t sx1262_get_chip_error(void)
