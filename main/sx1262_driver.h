@@ -35,7 +35,8 @@ extern "C" {
 #define SX1262_OPCODE_SET_LORA_PARAMS             0x8B
 #define SX1262_OPCODE_SET_PACKET_TYPE             0x8A
 #define SX1262_OPCODE_WRITE_BUFFER                0x0E
-#define SX1262_OPCODE_GET_STATUS                  0x03
+#define SX1262_OPCODE_GET_STATUS                  0xC0
+#define SX1262_OPCODE_GET_STATUS_REG              0x03
 #define SX1262_OPCODE_SET_PA_CONFIG               0x95
 #define SX1262_OPCODE_SET_REGULATOR_MODE          0x96
 #define SX1262_OPCODE_SET_RF_FREQUENCY            0x86
