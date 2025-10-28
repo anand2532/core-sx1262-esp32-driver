@@ -195,12 +195,15 @@ esp_err_t sx1262_write_buffer(uint8_t *buffer, uint8_t size)
 
 uint16_t sx1262_get_irq_status(void)
 {
-    uint8_t cmd = SX1262_OPCODE_GET_IRQ_STATUS;
-    uint8_t status[3];
+    static uint8_t status[3];
+    static uint8_t cmd = SX1262_OPCODE_GET_IRQ_STATUS;
+    
+    // Clear buffer first
+    memset(status, 0, 3);
     
     // Write command
     sx1262_hal_write(&cmd, 1);
-    vTaskDelay(pdMS_TO_TICKS(1));
+    vTaskDelay(pdMS_TO_TICKS(5)); // Wait for chip to process
     
     // Read response (should be 3 bytes: Status[7:0], IRQ_0[7:0], IRQ_0[15:8])
     sx1262_hal_read(status, 3);
@@ -208,9 +211,11 @@ uint16_t sx1262_get_irq_status(void)
     // IRQ is in bytes 1 and 2
     uint16_t irq_status = ((uint16_t)status[2] << 8) | status[1];
     
-    if ((status[1] == 0xA8 && status[2] == 0xA8) || (status[0] == 0xA8 && status[1] == 0xA8)) {
-        // Bad read - log the raw bytes
-        ESP_LOGW(TAG, "Bad IRQ read: 0x%02X 0x%02X 0x%02X - module may not be responding correctly", 
+    // Check for bad reads - 0xA8 is suspicious (might be floating line or stuck state)
+    bool bad_read = (status[0] == 0xA8) || (status[1] == 0xA8 && status[2] == 0xA8);
+    
+    if (bad_read) {
+        ESP_LOGW(TAG, "Bad IRQ read: [0x%02X] [0x%02X] [0x%02X]", 
                  status[0], status[1], status[2]);
     } else {
         ESP_LOGD(TAG, "IRQ Status: [0x%02X] [0x%02X] [0x%02X] → 0x%04X", 
