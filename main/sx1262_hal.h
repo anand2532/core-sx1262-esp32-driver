@@ -49,6 +49,13 @@ esp_err_t sx1262_hal_read(uint8_t *buffer, uint8_t size);
 esp_err_t sx1262_hal_write(uint8_t *buffer, uint8_t size);
 
 /**
+ * Full-duplex SPI transfer in a single CS transaction
+ * Sends tx_len bytes from tx, receives rx_len bytes into rx.
+ * Both lengths must be equal; pass the total frame length.
+ */
+esp_err_t sx1262_hal_transfer(const uint8_t *tx, uint8_t *rx, uint16_t len);
+
+/**
  * Wait for BUSY pin to be low
  */
 void sx1262_hal_wait_busy(void);
