@@ -220,17 +220,20 @@ esp_err_t sx1262_hal_write(uint8_t *buffer, uint8_t size)
 
 esp_err_t sx1262_hal_read(uint8_t *buffer, uint8_t size)
 {
-    // For reads, we don't need to wait for BUSY to be LOW
-    // because the previous write command clears BUSY
-    // Just a small delay to ensure BUSY went LOW
-    int busy_timeout = 100;
+    // Wait for BUSY to be LOW (chip is ready for SPI)
+    int busy_timeout = 1000;
     while (gpio_get_level(gpio_busy) == 1 && busy_timeout-- > 0) {
         vTaskDelay(pdMS_TO_TICKS(1));
     }
     
-    // Allocate a dummy buffer to send during read
+    if (busy_timeout <= 0) {
+        ESP_LOGE(TAG, "BUSY pin still HIGH before read - SPI may hang");
+        return ESP_ERR_TIMEOUT;
+    }
+    
+    // Allocate a dummy buffer to send during read (SPI needs TX data)
     uint8_t dummy_tx[size];
-    memset(dummy_tx, 0xFF, size);
+    memset(dummy_tx, 0xFF, size); // Send 0xFF while reading
     
     spi_transaction_t t = {
         .length = size * 8,
@@ -243,6 +246,9 @@ esp_err_t sx1262_hal_read(uint8_t *buffer, uint8_t size)
         ESP_LOGE(TAG, "SPI read failed: %s", esp_err_to_name(ret));
         return ret;
     }
+    
+    // Small delay after read
+    vTaskDelay(pdMS_TO_TICKS(1));
     
     return ESP_OK;
 }
