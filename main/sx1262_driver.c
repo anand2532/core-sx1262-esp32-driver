@@ -32,7 +32,8 @@ esp_err_t sx1262_set_sleep(void)
 
 esp_err_t sx1262_set_standby(void)
 {
-    uint8_t cmd[2] = {SX1262_OPCODE_SET_STANDBY, 0x00}; // STDBY_XOSC
+    // Use STDBY_XOSC per datasheet for fast FS/TX/RX transitions (0x01)
+    uint8_t cmd[2] = {SX1262_OPCODE_SET_STANDBY, 0x01};
     sx1262_hal_write(cmd, 2);
     vTaskDelay(pdMS_TO_TICKS(2));
     return ESP_OK;
