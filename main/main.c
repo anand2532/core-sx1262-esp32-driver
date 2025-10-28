@@ -97,15 +97,15 @@ esp_err_t lora_init(const lora_config_t *config)
     
     // Set to standby mode
     sx1262_set_standby();
-    vTaskDelay(pdMS_TO_TICKS(5));
+    vTaskDelay(pdMS_TO_TICKS(10));
     
     // Configure as LoRa packet type (1 = LoRa, 0 = GFSK)
     sx1262_set_packet_type(1);
-    vTaskDelay(pdMS_TO_TICKS(5));
+    vTaskDelay(pdMS_TO_TICKS(10));
     
     // Set RF frequency
     sx1262_set_rf_frequency(config->frequency);
-    vTaskDelay(pdMS_TO_TICKS(5));
+    vTaskDelay(pdMS_TO_TICKS(10));
     
     // Set LoRa parameters (SF, BW, CR)
     sx1262_set_lora_params(
@@ -113,19 +113,28 @@ esp_err_t lora_init(const lora_config_t *config)
         config->bandwidth,
         config->coding_rate
     );
-    vTaskDelay(pdMS_TO_TICKS(5));
+    vTaskDelay(pdMS_TO_TICKS(10));
     
-    // Configure packet parameters
-    // Preamble: 8, Header: explicit, Payload: variable, CRC: on
-    uint8_t cmd[7] = {0x8C, 0x00, 0x08, 0x01, 0xFF, 0x01, 0x00};
-    sx1262_hal_write(cmd, 7);
-    vTaskDelay(pdMS_TO_TICKS(5));
+    // Configure LoRa packet parameters
+    // Preamble: 8 symbols, Header: explicit, Payload: variable length, CRC: on
+    // Format: [opcode] [preamble_H] [preamble_L] [header] [max_length] [crc] [invert_iq]
+    uint8_t cmd[7] = {
+        SX1262_OPCODE_SET_LORA_PACKET_PARAMS,
+        0x00, 0x08,  // Preamble length: 8 symbols
+        0x00,         // Header: explicit (0x00)
+        0xFF,         // Max payload length: 255
+        0x01,         // CRC: enabled (0x01)
+        0x00          // Invert IQ: disabled (0x00)
+    };
+    sx1262_hal_transfer(cmd, NULL, 7);
+    vTaskDelay(pdMS_TO_TICKS(10));
     
-    // Set PA configuration for 20 dBm output
-    // PaSel = 1 (power amplifier select), Power = 14 (max power)
+    // Set PA configuration
+    // For 20-22 dBm: PaSel = 0x04 (use HP PA), Power = 0x07, HP_MAX = 0x01
+    // This configuration allows high power transmission
     uint8_t pa_cmd[4] = {SX1262_OPCODE_SET_PA_CONFIG, 0x04, 0x07, 0x01};
-    sx1262_hal_write(pa_cmd, 4);
-    vTaskDelay(pdMS_TO_TICKS(5));
+    sx1262_hal_transfer(pa_cmd, NULL, 4);
+    vTaskDelay(pdMS_TO_TICKS(10));
     
     ESP_LOGI(TAG, "Configured for ultra-long range:");
     ESP_LOGI(TAG, "  - Frequency: %lu Hz", config->frequency);
@@ -134,14 +143,14 @@ esp_err_t lora_init(const lora_config_t *config)
     ESP_LOGI(TAG, "  - Coding Rate: 4/8 (most robust)");
     ESP_LOGI(TAG, "  - TX Power: %d dBm (maximum)", config->tx_power);
     
-    // Set TX parameters
+    // Set TX parameters (ramp time: 0x07 = 64 us)
     sx1262_set_tx_params(config->tx_power);
-    vTaskDelay(pdMS_TO_TICKS(5));
+    vTaskDelay(pdMS_TO_TICKS(10));
     
-    // Set buffer base addresses
-    uint8_t buf_cmd[3] = {0x8F, 0x00, 0x00};
-    sx1262_hal_write(buf_cmd, 3);
-    vTaskDelay(pdMS_TO_TICKS(5));
+    // Set buffer base addresses (TX and RX both start at offset 0)
+    uint8_t buf_cmd[3] = {0x8F, 0x00, 0x00};  // SET_BUFFER_BASE_ADDRESS
+    sx1262_hal_transfer(buf_cmd, NULL, 3);
+    vTaskDelay(pdMS_TO_TICKS(10));
     
     ESP_LOGI(TAG, "LoRa initialized");
     return ESP_OK;
@@ -159,9 +168,7 @@ esp_err_t lora_send(uint8_t *data, uint8_t len)
     // Clear IRQ status
     sx1262_clear_irq_status(0xFFFF);
     
-    // Check BUSY pin before write
-    bool busy_before_write = gpio_get_level(SX1262_BUSY);
-    ESP_LOGI(TAG, "BUSY before write: %s", busy_before_write ? "HIGH" : "LOW");
+    ESP_LOGD(TAG, "Writing %d bytes to buffer", len);
     
     // Write data to SX1262 buffer
     ret = sx1262_write_buffer(data, len);
@@ -183,29 +190,26 @@ esp_err_t lora_send(uint8_t *data, uint8_t len)
     int timeout = 5000;  // 5 second timeout
     uint16_t irq_status;
     
-    ESP_LOGI(TAG, "Monitoring IRQ status...");
+    ESP_LOGD(TAG, "Monitoring IRQ status...");
     
     while (timeout-- > 0) {
         irq_status = sx1262_get_irq_status();
         
-        // Check for any valid IRQ (not bad reads)
-        if (irq_status != 0xA8A8 && irq_status != 0x28A8) {
-            
-            if (irq_status & SX1262_IRQ_TX_DONE) {
-                sx1262_clear_irq_status(SX1262_IRQ_TX_DONE);
-                ESP_LOGI(TAG, "✓ TX completed successfully!");
-                return ESP_OK;
-            }
-            
-            if (irq_status & SX1262_IRQ_TIMEOUT) {
-                ESP_LOGE(TAG, "TX timeout IRQ received");
-                sx1262_clear_irq_status(SX1262_IRQ_TIMEOUT);
-                return ESP_ERR_TIMEOUT;
-            }
-            
-            if (irq_status != 0) {
-                ESP_LOGI(TAG, "IRQ status: 0x%04X (but not TX_DONE or TIMEOUT)", irq_status);
-            }
+        if (irq_status & SX1262_IRQ_TX_DONE) {
+            sx1262_clear_irq_status(SX1262_IRQ_TX_DONE);
+            ESP_LOGI(TAG, "✓ TX completed successfully!");
+            return ESP_OK;
+        }
+        
+        if (irq_status & SX1262_IRQ_TIMEOUT) {
+            ESP_LOGE(TAG, "TX timeout IRQ received");
+            sx1262_clear_irq_status(SX1262_IRQ_TIMEOUT);
+            return ESP_ERR_TIMEOUT;
+        }
+        
+        if (irq_status & SX1262_IRQ_CRC_ERROR) {
+            ESP_LOGE(TAG, "CRC error on TX");
+            sx1262_clear_irq_status(SX1262_IRQ_CRC_ERROR);
         }
         
         vTaskDelay(pdMS_TO_TICKS(10));
@@ -265,13 +269,25 @@ esp_err_t lora_receive(uint8_t *data, uint8_t *len)
         if (irq_status & SX1262_IRQ_RX_DONE) {
             sx1262_clear_irq_status(SX1262_IRQ_RX_DONE);
             
-            // Read received data
-            sx1262_read_buffer(data, 255);
-            *len = 255;
-            
-            ESP_LOGI(TAG, "RX completed");
-            return ESP_OK;
+            // Read received data - this now returns actual packet length
+            ret = sx1262_read_buffer(data, len);
+            if (ret == ESP_OK && *len > 0) {
+                ESP_LOGI(TAG, "RX completed: %d bytes", *len);
+                return ESP_OK;
+            }
         }
+        
+        if (irq_status & SX1262_IRQ_TIMEOUT) {
+            ESP_LOGE(TAG, "RX timeout IRQ");
+            sx1262_clear_irq_status(SX1262_IRQ_TIMEOUT);
+            return ESP_ERR_TIMEOUT;
+        }
+        
+        if (irq_status & SX1262_IRQ_CRC_ERROR) {
+            ESP_LOGE(TAG, "CRC error on RX");
+            sx1262_clear_irq_status(SX1262_IRQ_CRC_ERROR);
+        }
+        
         vTaskDelay(pdMS_TO_TICKS(10));
     }
     
