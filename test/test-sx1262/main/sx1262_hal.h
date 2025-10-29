@@ -42,6 +42,8 @@ void sx1262_hal_set_rx_mode(void);
 bool sx1262_hal_get_dio1(void);
 bool sx1262_hal_get_dio2(void);
 bool sx1262_hal_get_dio3(void);
+bool sx1262_hal_get_busy_level(void);
+bool sx1262_hal_get_rst_level(void);
 
 #ifdef __cplusplus
 }
