@@ -218,6 +218,10 @@ esp_err_t lora_send(uint8_t *data, uint8_t len)
         return ret;
     }
     
+    // Check chip mode immediately after SET_TX
+    uint8_t chip_mode = sx1262_get_chip_mode();
+    ESP_LOGI(TAG, "Chip mode after SET_TX: %d", chip_mode);
+    
     ESP_LOGI(TAG, "Waiting for TX completion...");
     
     // Wait for transmission to complete
@@ -228,6 +232,11 @@ esp_err_t lora_send(uint8_t *data, uint8_t len)
     
     while (timeout-- > 0) {
         irq_status = sx1262_get_irq_status();
+        
+        // Log IRQ status every second
+        if (timeout % 100 == 0) {
+            ESP_LOGD(TAG, "IRQ status: 0x%04X (timeout: %d)", irq_status, timeout);
+        }
         
         if (irq_status & SX1262_IRQ_TX_DONE) {
             sx1262_clear_irq_status(SX1262_IRQ_TX_DONE);
@@ -438,6 +447,11 @@ void app_main(void)
             ESP_LOGI(TAG, "  Data: %.*s", rx_len > 6 ? rx_len - 6 : rx_len, &rx_buffer[6]);
         }
         
+        // Return to standby mode after RX (whether success or timeout)
+        sx1262_clear_irq_status(0xFFFF);
+        sx1262_set_standby();
+        vTaskDelay(pdMS_TO_TICKS(100));  // Small delay to stabilize
+        
         vTaskDelay(pdMS_TO_TICKS(2000));  // Wait 2 seconds
         
         // === TRANSMIT ===
@@ -448,6 +462,11 @@ void app_main(void)
         } else {
             ESP_LOGE(TAG, "✗ TX failed");
         }
+        
+        // Return to standby mode after TX (whether success or failure)
+        sx1262_clear_irq_status(0xFFFF);
+        sx1262_set_standby();
+        vTaskDelay(pdMS_TO_TICKS(100));  // Small delay to stabilize
         
         vTaskDelay(pdMS_TO_TICKS(15000));  // Wait 15 seconds
     }
