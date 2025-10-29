@@ -184,7 +184,9 @@ esp_err_t sx1262_hal_transfer(const uint8_t *tx, uint8_t *rx, uint16_t len)
         .tx_buffer = tx,
         .rx_buffer = rx,
     };
-    return spi_device_transmit(spi_handle, &t);
+    esp_err_t ret = spi_device_transmit(spi_handle, &t);
+    sx1262_hal_wait_busy();
+    return ret;
 }
 
 void sx1262_hal_set_tx_mode(void)
