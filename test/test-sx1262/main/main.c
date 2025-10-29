@@ -3,6 +3,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "driver/gpio.h"
 #include "sx1262_hal.h"
 #include "sx1262_driver.h"
 
@@ -34,6 +35,18 @@ static void radio_init(void)
         .dio3 = GPIO_NUM_NC,
     };
     ESP_ERROR_CHECK(sx1262_hal_init(&cfg));
+    
+    // Verify RST is HIGH after GPIO init
+    bool rst_check = gpio_get_level(GPIO_NUM_27);
+    ESP_LOGI(TAG, "RST pin (GPIO27) state after init: %d (should be 1)", rst_check);
+    if (rst_check != 1) {
+        ESP_LOGE(TAG, "ERROR: RST pin is LOW! Setting it HIGH manually...");
+        gpio_set_level(GPIO_NUM_27, 1);
+        vTaskDelay(pdMS_TO_TICKS(10));
+        rst_check = gpio_get_level(GPIO_NUM_27);
+        ESP_LOGI(TAG, "RST pin state after manual fix: %d", rst_check);
+    }
+    
     ESP_ERROR_CHECK(sx1262_driver_init());
 
     // Configure to match UART module settings: try 868.1 MHz, SF10, BW 7.8 kHz, CR 4/8, 20 dBm

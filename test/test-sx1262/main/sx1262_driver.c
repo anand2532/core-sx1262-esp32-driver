@@ -17,6 +17,18 @@ esp_err_t sx1262_driver_init(void)
     // Hardware reset
     sx1262_hal_reset();
 
+    // Sanity check: Try to read chip status to verify SPI communication
+    uint8_t status_cmd[2] = { SX1262_OPCODE_GET_STATUS, 0x00 };
+    uint8_t status_resp[2] = {0};
+    esp_err_t ret = sx1262_hal_transfer(status_cmd, status_resp, sizeof(status_cmd));
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Chip status after reset: 0x%02X", status_resp[0]);
+        uint8_t chip_mode = (status_resp[0] >> 4) & 0x07;
+        ESP_LOGI(TAG, "Chip mode: %d (0=Sleep, 2=Standby RC, 3=Standby XOSC)", chip_mode);
+    } else {
+        ESP_LOGE(TAG, "Failed to read chip status! SPI communication may be broken.");
+    }
+
     // DIO2 controls RF switch
     uint8_t rf_switch_cmd[2] = { SX1262_OPCODE_SET_DIO2_AS_RF_SWITCH_CTRL, 0x01 };
     ESP_ERROR_CHECK(send_simple(rf_switch_cmd, sizeof(rf_switch_cmd)));

@@ -147,10 +147,16 @@ void sx1262_hal_wait_busy(void)
 
 void sx1262_hal_reset(void)
 {
+    ESP_LOGI(TAG, "Resetting module...");
     gpio_set_level(gpio_rst, 0);
-    vTaskDelay(pdMS_TO_TICKS(5));
+    vTaskDelay(pdMS_TO_TICKS(10));  // 10ms low
     gpio_set_level(gpio_rst, 1);
-    vTaskDelay(pdMS_TO_TICKS(50));
+    vTaskDelay(pdMS_TO_TICKS(150)); // 150ms for reset to complete
+    bool rst_state = gpio_get_level(gpio_rst);
+    ESP_LOGI(TAG, "RESET released, RST pin level = %d (should be 1)", rst_state);
+    if (rst_state != 1) {
+        ESP_LOGE(TAG, "WARNING: RST pin is LOW! Module is in reset!");
+    }
 }
 
 esp_err_t sx1262_hal_write(uint8_t *buffer, uint8_t size)
