@@ -77,6 +77,14 @@ void app_main(void)
             }
             sx1262_clear_irq(irq);
         }
+        // Periodic GPIO state debug
+        static int ctr = 0;
+        if ((ctr++ % 10) == 0) { // ~500 ms if loop delay is 50 ms
+            bool busy = sx1262_hal_get_busy_level();
+            bool dio1 = sx1262_hal_get_dio1();
+            bool rst  = sx1262_hal_get_rst_level();
+            ESP_LOGI(TAG, "GPIO: BUSY=%d DIO1=%d RST=%d", busy, dio1, rst);
+        }
         vTaskDelay(pdMS_TO_TICKS(50));
     }
 #endif
