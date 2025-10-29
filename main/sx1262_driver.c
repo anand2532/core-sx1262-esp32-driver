@@ -127,8 +127,10 @@ esp_err_t sx1262_set_rx(uint32_t timeout_in_ms)
         0x00  // rx_boosted_if_dtc1
     };
     
-    sx1262_hal_transfer(cmd, NULL, sizeof(cmd));
+    // Set RX mode (RXEN HIGH, TXEN LOW) BEFORE sending SET_RX command
+    // This ensures the RF switch is in the correct position when chip enters RX mode
     sx1262_hal_set_rx_mode();
+    sx1262_hal_transfer(cmd, NULL, sizeof(cmd));
     
     return ESP_OK;
 }
@@ -146,8 +148,10 @@ esp_err_t sx1262_set_tx(uint32_t timeout_in_ms)
         0x00  // Ramp time
     };
     
-    sx1262_hal_transfer(cmd, NULL, sizeof(cmd));
+    // Set TX mode (TXEN HIGH, RXEN LOW) BEFORE sending SET_TX command
+    // This ensures the RF switch is in the correct position when chip enters TX mode
     sx1262_hal_set_tx_mode();
+    sx1262_hal_transfer(cmd, NULL, sizeof(cmd));
     
     return ESP_OK;
 }
