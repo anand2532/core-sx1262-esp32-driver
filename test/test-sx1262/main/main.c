@@ -40,8 +40,8 @@ static void radio_init(void)
     ESP_ERROR_CHECK(sx1262_configure_default(868100000));
     ESP_ERROR_CHECK(sx1262_set_lora_params(10, SX1262_LORA_BW_7_8, SX1262_LORA_CR_4_8));
     ESP_ERROR_CHECK(sx1262_set_tx_power(20));
-    // Optional: try private network sync word 0x1424 (common on modules); try 0x3444 if no link
-    ESP_ERROR_CHECK(sx1262_set_sync_word(0x1424));
+    // Sync word: try 0x3444 (public). If still no link, try 0x1424 (private)
+    ESP_ERROR_CHECK(sx1262_set_sync_word(0x3444));
 }
 
 void app_main(void)
