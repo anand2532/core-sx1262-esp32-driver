@@ -287,14 +287,24 @@ esp_err_t sx1262_hal_transfer(const uint8_t *tx, uint8_t *rx, uint16_t len)
 
 void sx1262_hal_set_tx_mode(void)
 {
+    ESP_LOGI(TAG, "Setting RF switch to TX: TXEN=HIGH, RXEN=LOW");
     gpio_set_level(gpio_txen, 1);
     gpio_set_level(gpio_rxen, 0);
+    vTaskDelay(pdMS_TO_TICKS(1)); // Small delay for GPIO to settle
+    int tx_level = gpio_get_level(gpio_txen);
+    int rx_level = gpio_get_level(gpio_rxen);
+    ESP_LOGI(TAG, "Verified: TXEN=%d, RXEN=%d", tx_level, rx_level);
 }
 
 void sx1262_hal_set_rx_mode(void)
 {
+    ESP_LOGI(TAG, "Setting RF switch to RX: RXEN=HIGH, TXEN=LOW");
     gpio_set_level(gpio_rxen, 1);
     gpio_set_level(gpio_txen, 0);
+    vTaskDelay(pdMS_TO_TICKS(1)); // Small delay for GPIO to settle
+    int tx_level = gpio_get_level(gpio_txen);
+    int rx_level = gpio_get_level(gpio_rxen);
+    ESP_LOGI(TAG, "Verified: TXEN=%d, RXEN=%d", tx_level, rx_level);
 }
 
 bool sx1262_hal_get_dio1(void)
