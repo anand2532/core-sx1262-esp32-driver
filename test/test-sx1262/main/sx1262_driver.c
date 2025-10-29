@@ -1,0 +1,151 @@
+#include <string.h>
+#include "sx1262_driver.h"
+#include "sx1262_hal.h"
+#include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+static const char *TAG = "SX1262_DRV";
+
+static esp_err_t send_simple(const uint8_t *buf, uint8_t len)
+{
+    return sx1262_hal_write((uint8_t *)buf, len);
+}
+
+esp_err_t sx1262_driver_init(void)
+{
+    // Hardware reset
+    sx1262_hal_reset();
+
+    // DIO2 controls RF switch
+    uint8_t rf_switch_cmd[2] = { SX1262_OPCODE_SET_DIO2_AS_RF_SWITCH_CTRL, 0x01 };
+    ESP_ERROR_CHECK(send_simple(rf_switch_cmd, sizeof(rf_switch_cmd)));
+
+    // Packet type LoRa
+    uint8_t pkt_type[2] = { SX1262_OPCODE_SET_PACKET_TYPE, 0x01 };
+    ESP_ERROR_CHECK(send_simple(pkt_type, sizeof(pkt_type)));
+
+    // Regulator mode: DC-DC (0x01) if available; else LDO (0x00)
+    uint8_t reg_mode[2] = { SX1262_OPCODE_SET_REGULATOR_MODE, 0x01 };
+    ESP_ERROR_CHECK(send_simple(reg_mode, sizeof(reg_mode)));
+
+    // PA config (duty, hpMax, device, paLut)
+    uint8_t pa_cfg[5] = { SX1262_OPCODE_SET_PA_CONFIG, 0x04, 0x07, 0x00, 0x01 };
+    ESP_ERROR_CHECK(send_simple(pa_cfg, sizeof(pa_cfg)));
+
+    // Base addresses
+    uint8_t base_addr[3] = { SX1262_OPCODE_SET_BUFFER_BASE_ADDRESS, 0x00, 0x00 };
+    ESP_ERROR_CHECK(send_simple(base_addr, sizeof(base_addr)));
+
+    // Enable DIO1 for RX_DONE/TX_DONE
+    uint8_t dio_irq[9] = {
+        SX1262_OPCODE_SET_DIO_IRQ_PARAMS,
+        0x00, 0xFF, // IrqMask MSB/LSB: enable all for bring-up
+        0x00, 0xFF, // DIO1 mask
+        0x00, 0x00, // DIO2 mask
+        0x00, 0x00  // DIO3 mask
+    };
+    ESP_ERROR_CHECK(send_simple(dio_irq, sizeof(dio_irq)));
+
+    ESP_LOGI(TAG, "Driver init OK");
+    return ESP_OK;
+}
+
+static esp_err_t set_rf_freq(uint32_t freq_hz)
+{
+    // rfFreqSteps = freq / (32e6 / 2^25) = freq / 0.95367431640625
+    uint32_t steps = (uint32_t)((double)freq_hz / 0.95367431640625);
+    uint8_t cmd[5] = { SX1262_OPCODE_SET_RF_FREQUENCY,
+                       (uint8_t)(steps >> 24), (uint8_t)(steps >> 16),
+                       (uint8_t)(steps >> 8), (uint8_t)(steps) };
+    return send_simple(cmd, sizeof(cmd));
+}
+
+static esp_err_t set_lora_mod(uint8_t sf, uint8_t bw, uint8_t cr)
+{
+    uint8_t ldo = (sf >= 11) ? 1 : 0;
+    uint8_t cmd[5] = { SX1262_OPCODE_SET_LORA_PARAMS, sf, bw, cr, ldo };
+    return send_simple(cmd, sizeof(cmd));
+}
+
+esp_err_t sx1262_configure_default(uint32_t freq_hz)
+{
+    ESP_ERROR_CHECK(set_rf_freq(freq_hz));
+
+    // Match UART module: ~2400bps → SF10 + 7.8kHz BW, CR 4/8
+    ESP_ERROR_CHECK(set_lora_mod(10, SX1262_LORA_BW_7_8, SX1262_LORA_CR_4_8));
+
+    // TX params: power=20dBm, ramp 40us
+    uint8_t txp[3] = { SX1262_OPCODE_SET_TX_PARAMS, 20, 0x02 };
+    ESP_ERROR_CHECK(send_simple(txp, sizeof(txp)));
+
+    // LoRa packet params: preamble 12, explicit header, payload len 0 (variable), CRC on, IQ normal
+    uint8_t pkt[7] = { SX1262_OPCODE_SET_LORA_PACKET_PARAMS, 0x00, 0x0C, 0x00, 0xFF, 0x01, 0x00 };
+    ESP_ERROR_CHECK(send_simple(pkt, sizeof(pkt)));
+
+    return ESP_OK;
+}
+
+esp_err_t sx1262_write_payload(const uint8_t *data, uint8_t len)
+{
+    if (len > 255) len = 255;
+    uint8_t frame[2 + 255] = {0};
+    frame[0] = SX1262_OPCODE_WRITE_BUFFER;
+    frame[1] = 0x00;
+    memcpy(&frame[2], data, len);
+    return sx1262_hal_transfer(frame, NULL, 2 + len);
+}
+
+esp_err_t sx1262_tx(uint32_t timeout_ms)
+{
+    sx1262_hal_set_tx_mode();
+    uint32_t ticks = (timeout_ms * 64) / 1000;
+    if (ticks > 0xFFFFFF) ticks = 0xFFFFFF;
+    uint8_t cmd[4] = { SX1262_OPCODE_SET_TX, (uint8_t)(ticks >> 16), (uint8_t)(ticks >> 8), (uint8_t)ticks };
+    return sx1262_hal_transfer(cmd, NULL, sizeof(cmd));
+}
+
+esp_err_t sx1262_enter_rx(uint32_t timeout_ms)
+{
+    sx1262_hal_set_rx_mode();
+    uint32_t ticks = (timeout_ms * 64) / 1000;
+    if (ticks == 0) ticks = 0xFFFFFF; // no timeout
+    if (ticks > 0xFFFFFF) ticks = 0xFFFFFF;
+    uint8_t cmd[4] = { SX1262_OPCODE_SET_RX, (uint8_t)(ticks >> 16), (uint8_t)(ticks >> 8), (uint8_t)ticks };
+    return sx1262_hal_transfer(cmd, NULL, sizeof(cmd));
+}
+
+esp_err_t sx1262_read_payload(uint8_t *data, uint8_t *len)
+{
+    uint8_t status[3] = { SX1262_OPCODE_GET_RX_BUFFER_STATUS, 0x00, 0x00 };
+    uint8_t resp[3] = {0};
+    ESP_ERROR_CHECK(sx1262_hal_transfer(status, resp, sizeof(status)));
+    uint8_t pay_len = resp[1];
+    uint8_t start = resp[2];
+    if (pay_len == 0) { *len = 0; return ESP_OK; }
+    uint8_t tx[3 + 255] = {0};
+    uint8_t rx[3 + 255] = {0};
+    tx[0] = SX1262_OPCODE_READ_BUFFER;
+    tx[1] = start;
+    tx[2] = 0x00;
+    ESP_ERROR_CHECK(sx1262_hal_transfer(tx, rx, 3 + pay_len));
+    memcpy(data, &rx[3], pay_len);
+    *len = pay_len;
+    return ESP_OK;
+}
+
+uint16_t sx1262_get_irq(void)
+{
+    uint8_t tx[3] = { SX1262_OPCODE_GET_IRQ_STATUS, 0x00, 0x00 };
+    uint8_t rx[3] = {0};
+    sx1262_hal_transfer(tx, rx, sizeof(tx));
+    return ((uint16_t)rx[1] << 8) | rx[2];
+}
+
+void sx1262_clear_irq(uint16_t mask)
+{
+    uint8_t cmd[3] = { SX1262_OPCODE_CLR_IRQ_STATUS, (uint8_t)(mask >> 8), (uint8_t)mask };
+    sx1262_hal_transfer(cmd, NULL, sizeof(cmd));
+}
+
+
