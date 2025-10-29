@@ -182,14 +182,22 @@ void app_main(void)
     }
     vTaskDelay(pdMS_TO_TICKS(5));
     
+    // Set private LoRa sync word (0x3444) instead of public (0x1424)
+    ret = sx1262_set_lora_sync_word(0x3444);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set sync word");
+        return;
+    }
+    vTaskDelay(pdMS_TO_TICKS(5));
+    
     ESP_LOGI(TAG, "=== Configuration Complete ===");
     ESP_LOGI(TAG, "Frequency: 868.1 MHz");
     ESP_LOGI(TAG, "SF: 10, BW: 7.8 kHz, CR: 4/8");
-    ESP_LOGI(TAG, "Starting RX mode...");
+    ESP_LOGI(TAG, "Sync word: 0x3444 (private)");
+    ESP_LOGI(TAG, "Starting continuous RX mode...");
     
-    // Enter RX mode
-    uint32_t timeout = 1000;  // 1 second timeout
-    uint32_t timeout_value = (timeout * 64) / 1000;
+    // Enter continuous RX mode (no timeout)
+    uint32_t timeout_value = 0xFFFFFF;  // Continuous RX
     uint8_t rx_cmd[5] = {
         SX1262_OPCODE_SET_RX,
         (uint8_t)(timeout_value >> 16),
