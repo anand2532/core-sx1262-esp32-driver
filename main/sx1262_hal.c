@@ -115,7 +115,8 @@ esp_err_t sx1262_hal_init(const sx1262_hal_config_t *config)
         .max_transfer_sz = 4096,
     };
     
-    ret = spi_bus_initialize(HSPI_HOST, &buscfg, 1);
+    // Use VSPI to avoid conflict with ESP32 internal flash SPI on HSPI
+    ret = spi_bus_initialize(VSPI_HOST, &buscfg, 1);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize SPI bus: %s", esp_err_to_name(ret));
         return ret;
@@ -131,7 +132,7 @@ esp_err_t sx1262_hal_init(const sx1262_hal_config_t *config)
         .pre_cb = NULL,
     };
     
-    ret = spi_bus_add_device(HSPI_HOST, &devcfg, &spi_handle);
+    ret = spi_bus_add_device(VSPI_HOST, &devcfg, &spi_handle);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to add SPI device: %s", esp_err_to_name(ret));
         return ret;
@@ -152,7 +153,7 @@ esp_err_t sx1262_hal_deinit(void)
 {
     if (spi_handle) {
         spi_bus_remove_device(spi_handle);
-        spi_bus_free(HSPI_HOST);
+        spi_bus_free(VSPI_HOST);
         spi_handle = NULL;
     }
     return ESP_OK;
