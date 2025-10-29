@@ -71,6 +71,16 @@ static void radio_init(void)
     ESP_ERROR_CHECK(sx1262_set_tx_power(20));
     // Sync word: try 0x3444 (public). If still no link, try 0x1424 (private)
     ESP_ERROR_CHECK(sx1262_set_sync_word(0x3444));
+
+    // Print the applied radio settings for visibility
+    ESP_LOGI(TAG, "Radio settings: freq=%u Hz, SF=%u, BW=7.8kHz, CR=4/8, CRC=%s, Sync=0x%04X, Header=%s, IQ=%s, TXP=%u dBm",
+             868100000u,
+             10u,
+             "OFF",
+             0x3444,
+             "explicit",
+             "standard",
+             20u);
 }
 
 void app_main(void)
