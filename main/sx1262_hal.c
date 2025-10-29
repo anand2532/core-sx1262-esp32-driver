@@ -37,28 +37,36 @@ esp_err_t sx1262_hal_gpio_init(const sx1262_hal_config_t *config)
     ESP_ERROR_CHECK(gpio_config(&io_conf));
     gpio_set_level(config->rst, 1); // Keep high during operation
     
-    // Configure RXEN pin as output
-    io_conf.pin_bit_mask = (1ULL << config->rxen);
-    io_conf.mode = GPIO_MODE_OUTPUT;
-    io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
-    io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-    io_conf.intr_type = GPIO_INTR_DISABLE;
-    ESP_ERROR_CHECK(gpio_config(&io_conf));
-    gpio_set_level(config->rxen, 0); // Set LOW initially
+    // Configure RXEN pin as output (only if not GPIO_NUM_NC)
+    if (config->rxen != GPIO_NUM_NC) {
+        io_conf.pin_bit_mask = (1ULL << config->rxen);
+        io_conf.mode = GPIO_MODE_OUTPUT;
+        io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
+        io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+        io_conf.intr_type = GPIO_INTR_DISABLE;
+        ESP_ERROR_CHECK(gpio_config(&io_conf));
+        gpio_set_level(config->rxen, 0); // Set LOW initially
+    }
     
-    // Configure TXEN pin as output
-    io_conf.pin_bit_mask = (1ULL << config->txen);
-    io_conf.mode = GPIO_MODE_OUTPUT;
-    io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
-    io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-    io_conf.intr_type = GPIO_INTR_DISABLE;
-    ESP_ERROR_CHECK(gpio_config(&io_conf));
-    gpio_set_level(config->txen, 0); // Set LOW initially
+    // Configure TXEN pin as output (only if not GPIO_NUM_NC)
+    if (config->txen != GPIO_NUM_NC) {
+        io_conf.pin_bit_mask = (1ULL << config->txen);
+        io_conf.mode = GPIO_MODE_OUTPUT;
+        io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
+        io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+        io_conf.intr_type = GPIO_INTR_DISABLE;
+        ESP_ERROR_CHECK(gpio_config(&io_conf));
+        gpio_set_level(config->txen, 0); // Set LOW initially
+    }
     
-    // Verify TXEN and RXEN pins are actually set
-    int txen_verify = gpio_get_level(config->txen);
-    int rxen_verify = gpio_get_level(config->rxen);
-    ESP_LOGI(TAG, "Initial TXEN/RXEN levels: TXEN=%d, RXEN=%d", txen_verify, rxen_verify);
+    // Verify TXEN and RXEN pins are actually set (if not NC)
+    if (config->txen != GPIO_NUM_NC && config->rxen != GPIO_NUM_NC) {
+        int txen_verify = gpio_get_level(config->txen);
+        int rxen_verify = gpio_get_level(config->rxen);
+        ESP_LOGI(TAG, "Initial TXEN/RXEN levels: TXEN=%d, RXEN=%d", txen_verify, rxen_verify);
+    } else {
+        ESP_LOGI(TAG, "TXEN/RXEN not used (using DIO2 RF switch)");
+    }
     
     // Configure DIO1 pin as input with interrupt on rising edge
     io_conf.pin_bit_mask = (1ULL << config->dio1);
@@ -305,26 +313,16 @@ esp_err_t sx1262_hal_transfer(const uint8_t *tx, uint8_t *rx, uint16_t len)
 
 void sx1262_hal_set_tx_mode(void)
 {
-    ESP_LOGI(TAG, "Setting RF switch to TX: TXEN=HIGH, RXEN=LOW (TXEN pin=%d, RXEN pin=%d)", gpio_txen, gpio_rxen);
-    gpio_set_level(gpio_txen, 1);
-    gpio_set_level(gpio_rxen, 0);
-    vTaskDelay(pdMS_TO_TICKS(5)); // Longer delay for GPIO to settle
-    int tx_level = gpio_get_level(gpio_txen);
-    int rx_level = gpio_get_level(gpio_rxen);
-    ESP_LOGI(TAG, "After TX mode: gpio_get_level(TXEN=%d)=%d, gpio_get_level(RXEN=%d)=%d", 
-             gpio_txen, tx_level, gpio_rxen, rx_level);
+    // RF switch controlled by DIO2 (chip internal)
+    // No external TXEN/RXEN control needed
+    ESP_LOGD(TAG, "TX mode - using DIO2 RF switch (chip internal)");
 }
 
 void sx1262_hal_set_rx_mode(void)
 {
-    ESP_LOGI(TAG, "Setting RF switch to RX: RXEN=HIGH, TXEN=LOW (TXEN pin=%d, RXEN pin=%d)", gpio_txen, gpio_rxen);
-    gpio_set_level(gpio_rxen, 1);
-    gpio_set_level(gpio_txen, 0);
-    vTaskDelay(pdMS_TO_TICKS(5)); // Longer delay for GPIO to settle
-    int tx_level = gpio_get_level(gpio_txen);
-    int rx_level = gpio_get_level(gpio_rxen);
-    ESP_LOGI(TAG, "After RX mode: gpio_get_level(TXEN=%d)=%d, gpio_get_level(RXEN=%d)=%d", 
-             gpio_txen, tx_level, gpio_rxen, rx_level);
+    // RF switch controlled by DIO2 (chip internal)
+    // No external TXEN/RXEN control needed
+    ESP_LOGD(TAG, "RX mode - using DIO2 RF switch (chip internal)");
 }
 
 bool sx1262_hal_get_dio1(void)
