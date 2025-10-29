@@ -27,6 +27,8 @@ static const char *TAG = "MAIN";
 
 void app_main(void)
 {
+    esp_err_t ret;
+    
     ESP_LOGI(TAG, "=== SX1262 RX Test Started ===");
     
     // Initialize NVS
@@ -70,25 +72,57 @@ void app_main(void)
     // Initialize module
     ESP_LOGI(TAG, "Initializing SX1262...");
     
+    // Wait for BUSY to be LOW
+    int busy_timeout = 1000;
+    while (gpio_get_level(SX1262_BUSY) == 1 && busy_timeout-- > 0) {
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+    
+    if (gpio_get_level(SX1262_BUSY) == 1) {
+        ESP_LOGE(TAG, "BUSY stuck HIGH - cannot initialize!");
+        return;
+    }
+    
     // Set regulator mode (LDO)
     uint8_t cmd[2] = {SX1262_OPCODE_SET_REGULATOR_MODE, 0x01};
-    sx1262_hal_write(cmd, 2);
+    ret = sx1262_hal_write(cmd, 2);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set regulator mode");
+        return;
+    }
     vTaskDelay(pdMS_TO_TICKS(5));
     
     // Clear IRQ
-    sx1262_clear_irq_status(0xFFFF);
+    ret = sx1262_clear_irq_status(0xFFFF);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to clear IRQ");
+        return;
+    }
+    vTaskDelay(pdMS_TO_TICKS(5));
     
     // Set standby
-    sx1262_set_standby();
+    ret = sx1262_set_standby();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set standby");
+        return;
+    }
     vTaskDelay(pdMS_TO_TICKS(10));
     
     // Set LoRa packet type
-    sx1262_set_packet_type(0x01);
+    ret = sx1262_set_packet_type(0x01);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set packet type");
+        return;
+    }
     vTaskDelay(pdMS_TO_TICKS(10));
     
     // Enable DIO2 as RF switch (let chip control RF internally)
     uint8_t dio2_cmd[2] = {SX1262_OPCODE_SET_DIO2_AS_RF_SWITCH_CTRL, 0x01};
-    sx1262_hal_transfer(dio2_cmd, NULL, 2);
+    ret = sx1262_hal_transfer(dio2_cmd, NULL, 2);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set DIO2");
+        return;
+    }
     vTaskDelay(pdMS_TO_TICKS(5));
     
     // Set frequency to 868.1 MHz
@@ -101,7 +135,11 @@ void app_main(void)
         (uint8_t)(rf_freq >> 8),
         (uint8_t)(rf_freq)
     };
-    sx1262_hal_transfer(freq_cmd, NULL, 5);
+    ret = sx1262_hal_transfer(freq_cmd, NULL, 5);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set frequency");
+        return;
+    }
     vTaskDelay(pdMS_TO_TICKS(5));
     
     // Set LoRa parameters: SF10, BW7.8kHz, CR4/8
@@ -112,7 +150,11 @@ void app_main(void)
         SX1262_LORA_CR_4_8,
         1    // Low data rate optimize
     };
-    sx1262_hal_transfer(lora_cmd, NULL, 5);
+    ret = sx1262_hal_transfer(lora_cmd, NULL, 5);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set LoRa params");
+        return;
+    }
     vTaskDelay(pdMS_TO_TICKS(5));
     
     // Set packet parameters
@@ -124,12 +166,20 @@ void app_main(void)
         0x01,        // CRC enabled
         0x00         // Invert IQ disabled
     };
-    sx1262_hal_transfer(pkt_cmd, NULL, 7);
+    ret = sx1262_hal_transfer(pkt_cmd, NULL, 7);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set packet params");
+        return;
+    }
     vTaskDelay(pdMS_TO_TICKS(5));
     
     // Set buffer base addresses
     uint8_t buf_cmd[3] = {SX1262_OPCODE_SET_BUFFER_BASE_ADDRESS, 0x00, 0x80};
-    sx1262_hal_transfer(buf_cmd, NULL, 3);
+    ret = sx1262_hal_transfer(buf_cmd, NULL, 3);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set buffer addresses");
+        return;
+    }
     vTaskDelay(pdMS_TO_TICKS(5));
     
     ESP_LOGI(TAG, "=== Configuration Complete ===");
@@ -147,7 +197,11 @@ void app_main(void)
         (uint8_t)(timeout_value),
         0x00
     };
-    sx1262_hal_transfer(rx_cmd, NULL, 5);
+    ret = sx1262_hal_transfer(rx_cmd, NULL, 5);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to enter RX mode");
+        return;
+    }
     
     // Wait for data
     ESP_LOGI(TAG, "Listening for data...");
@@ -159,22 +213,63 @@ void app_main(void)
             ESP_LOGI(TAG, "RX DONE! Data received");
             sx1262_clear_irq_status(SX1262_IRQ_RX_DONE);
             
-            // Read data
-            uint8_t tx_buf[3] = {SX1262_OPCODE_GET_RX_BUFFER_STATUS, 0x00, 0x00};
-            uint8_t rx_buf[3] = {0};
-            sx1262_hal_transfer(tx_buf, rx_buf, 3);
+            // Read buffer status to get length
+            uint8_t tx_status[3] = {SX1262_OPCODE_GET_RX_BUFFER_STATUS, 0x00, 0x00};
+            uint8_t rx_status[3] = {0};
+            sx1262_hal_transfer(tx_status, rx_status, 3);
             
-            uint8_t len = rx_buf[1];
-            ESP_LOGI(TAG, "Received: %d bytes", len);
+            uint8_t len = rx_status[1];
+            uint8_t offset = rx_status[2];
+            ESP_LOGI(TAG, "Received: %d bytes (offset: %d)", len, offset);
+            
+            if (len > 0) {
+                // Limit length to prevent buffer overflow
+                uint8_t read_len = (len > 240) ? 240 : len;
+                
+                // Read actual data
+                uint8_t tx_read[3 + 240] = {0};
+                uint8_t rx_read[3 + 240] = {0};
+                tx_read[0] = SX1262_OPCODE_READ_BUFFER;
+                tx_read[1] = offset;
+                tx_read[2] = 0x00; // dummy
+                sx1262_hal_transfer(tx_read, rx_read, 3 + read_len);
+                
+                // Print data as hex
+                ESP_LOGI(TAG, "Data (hex, first %d of %d bytes):", read_len, len);
+                for (int i = 0; i < read_len; i++) {
+                    if (i % 16 == 0) printf("\n  %04X: ", i);
+                    printf("%02X ", rx_read[3 + i]);
+                }
+                printf("\n");
+                
+                // Print data as ASCII (if printable)
+                ESP_LOGI(TAG, "Data (ASCII):");
+                printf("  ");
+                for (int i = 0; i < read_len && i < 80; i++) {
+                    uint8_t c = rx_read[3 + i];
+                    if (c >= 32 && c < 127) {
+                        printf("%c", c);
+                    } else {
+                        printf(".");
+                    }
+                }
+                printf("\n");
+            }
             
             // Re-enter RX
-            sx1262_hal_transfer(rx_cmd, NULL, 5);
+            ret = sx1262_hal_transfer(rx_cmd, NULL, 5);
+            if (ret != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to re-enter RX mode");
+            }
         }
         
         if (irq & SX1262_IRQ_TIMEOUT) {
             ESP_LOGI(TAG, "RX timeout, re-entering RX mode...");
             sx1262_clear_irq_status(SX1262_IRQ_TIMEOUT);
-            sx1262_hal_transfer(rx_cmd, NULL, 5);
+            ret = sx1262_hal_transfer(rx_cmd, NULL, 5);
+            if (ret != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to re-enter RX mode after timeout");
+            }
         }
         
         vTaskDelay(pdMS_TO_TICKS(100));
