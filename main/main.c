@@ -7,6 +7,7 @@
 #include <string.h>
 #include "esp_log.h"
 #include "nvs_flash.h"
+#include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "sx1262_hal.h"
@@ -218,9 +219,10 @@ esp_err_t lora_send(uint8_t *data, uint8_t len)
         return ret;
     }
     
-    // Check chip mode immediately after SET_TX
+    // Check chip mode and GPIO states immediately after SET_TX
     uint8_t chip_mode = sx1262_get_chip_mode();
     ESP_LOGI(TAG, "Chip mode after SET_TX: %d", chip_mode);
+    ESP_LOGI(TAG, "GPIO states: TXEN=%d, RXEN=%d", gpio_get_level(SX1262_TXEN), gpio_get_level(SX1262_RXEN));
     
     ESP_LOGI(TAG, "Waiting for TX completion...");
     
@@ -270,12 +272,12 @@ esp_err_t lora_send(uint8_t *data, uint8_t len)
     ESP_LOGE(TAG, "==============================================");
     
     // Get chip mode
-    uint8_t chip_mode = sx1262_get_chip_mode();
+    uint8_t chip_mode_final = sx1262_get_chip_mode();
     const char* mode_names[] = {
         "SLEEP", "RC_RUN", "HXTAL", "RESET", 
         "STDBY_RC", "STDBY_XOSC", "FS", "RX", "TX"
     };
-    ESP_LOGE(TAG, "  Chip Mode: %d (%s)", chip_mode, mode_names[chip_mode < 9 ? chip_mode : 8]);
+    ESP_LOGE(TAG, "  Chip Mode: %d (%s)", chip_mode_final, mode_names[chip_mode_final < 9 ? chip_mode_final : 8]);
     
     // Get chip error
     uint16_t chip_error = sx1262_get_chip_error();
@@ -289,8 +291,8 @@ esp_err_t lora_send(uint8_t *data, uint8_t len)
     vTaskDelay(pdMS_TO_TICKS(50));
     
     // Check mode again
-    chip_mode = sx1262_get_chip_mode();
-    ESP_LOGI(TAG, "  After reset, Chip Mode: %d (%s)", chip_mode, mode_names[chip_mode < 9 ? chip_mode : 8]);
+    chip_mode_final = sx1262_get_chip_mode();
+    ESP_LOGI(TAG, "  After reset, Chip Mode: %d (%s)", chip_mode_final, mode_names[chip_mode_final < 9 ? chip_mode_final : 8]);
     
     return ESP_ERR_TIMEOUT;
 }

@@ -153,7 +153,28 @@ esp_err_t sx1262_set_tx(uint32_t timeout_in_ms)
     // This ensures the RF switch is in the correct position when chip enters TX mode
     sx1262_hal_set_tx_mode();
     vTaskDelay(pdMS_TO_TICKS(1)); // Small delay for RF switch to stabilize
+    
+    ESP_LOGI(TAG, "Sending SET_TX command (timeout=%lu)", timeout);
+    
+    // Get chip status BEFORE sending command
+    uint8_t status_before[2] = {0};
+    uint8_t tx_get[2] = { SX1262_OPCODE_GET_STATUS, 0x00 };
+    sx1262_hal_transfer(tx_get, status_before, sizeof(tx_get));
+    ESP_LOGI(TAG, "Chip status BEFORE SET_TX: 0x%02X", status_before[0]);
+    
     sx1262_hal_transfer(cmd, NULL, sizeof(cmd));
+    
+    // Wait a bit for chip to process
+    vTaskDelay(pdMS_TO_TICKS(10));
+    
+    // Get chip status AFTER sending command
+    uint8_t status_after[2] = {0};
+    sx1262_hal_transfer(tx_get, status_after, sizeof(tx_get));
+    ESP_LOGI(TAG, "Chip status AFTER SET_TX: 0x%02X", status_after[0]);
+    
+    // Check chip mode after command
+    uint8_t chip_mode = sx1262_get_chip_mode();
+    ESP_LOGI(TAG, "Chip mode after SET_TX command: %d (expected: 8=TX)", chip_mode);
     
     return ESP_OK;
 }
