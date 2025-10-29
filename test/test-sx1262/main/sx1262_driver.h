@@ -48,6 +48,10 @@ extern "C" {
 
 esp_err_t sx1262_driver_init(void);
 esp_err_t sx1262_configure_default(uint32_t freq_hz);
+esp_err_t sx1262_set_rf_frequency(uint32_t freq_hz);
+esp_err_t sx1262_set_lora_params(uint8_t spreading_factor, uint8_t bandwidth, uint8_t coding_rate);
+esp_err_t sx1262_set_tx_power(uint8_t dbm);
+esp_err_t sx1262_set_sync_word(uint16_t sync_word);
 esp_err_t sx1262_write_payload(const uint8_t *data, uint8_t len);
 esp_err_t sx1262_tx(uint32_t timeout_ms);
 esp_err_t sx1262_enter_rx(uint32_t timeout_ms);
