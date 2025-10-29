@@ -216,4 +216,14 @@ bool sx1262_hal_get_dio3(void)
     return gpio_dio3 != GPIO_NUM_NC ? gpio_get_level(gpio_dio3) : false;
 }
 
+bool sx1262_hal_get_busy_level(void)
+{
+    return gpio_busy != GPIO_NUM_NC ? gpio_get_level(gpio_busy) : false;
+}
+
+bool sx1262_hal_get_rst_level(void)
+{
+    return gpio_rst != GPIO_NUM_NC ? gpio_get_level(gpio_rst) : false;
+}
+
 
