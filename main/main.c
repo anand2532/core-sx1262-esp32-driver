@@ -18,10 +18,11 @@ static const char *TAG = "MAIN";
 // PIN CONFIGURATION
 // Configure these pins according to your wiring
 // ============================================
-#define SX1262_SPI_CS    5   // Chip Select
-#define SX1262_SPI_MOSI  23  // Master Out Slave In
-#define SX1262_SPI_MISO  19  // Master In Slave Out
-#define SX1262_SPI_SCK   18  // SPI Clock
+// VSPI pin assignments for ESP32
+#define SX1262_SPI_CS    5   // Chip Select (GPIO5)
+#define SX1262_SPI_MOSI  23  // Master Out Slave In (GPIO23 - VSPI MOSI)
+#define SX1262_SPI_MISO  19  // Master In Slave Out (GPIO19 - VSPI MISO)
+#define SX1262_SPI_SCK   18  // SPI Clock (GPIO18 - VSPI SCK)
 #define SX1262_BUSY      4   // Busy signal (must be LOW before SPI operations)
 #define SX1262_RST       2   // Reset pin (active low)
 #define SX1262_RXEN      26  // RX Enable (controls RF switch)
