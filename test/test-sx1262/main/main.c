@@ -16,8 +16,24 @@
 // SCK=GPIO18, MOSI=GPIO23, MISO=GPIO19, CS=GPIO5
 // BUSY=GPIO4, RESET=GPIO27, DIO1=GPIO26
 // RXEN/TXEN are not used (RF switch via DIO2)
+// Built-in LED on ESP32 DevKit: GPIO2
+
+#define LED_GPIO 2
 
 static const char *TAG = "APP";
+
+static void led_init(void)
+{
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << LED_GPIO),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&io_conf);
+    gpio_set_level(LED_GPIO, 1); // LED ON = no data
+}
 
 static void radio_init(void)
 {
@@ -60,6 +76,7 @@ static void radio_init(void)
 void app_main(void)
 {
     ESP_LOGI(TAG, "Starting SX1262 example (APP_TX_MODE=%d)", APP_TX_MODE);
+    led_init();
     radio_init();
 
 #if APP_TX_MODE
@@ -86,6 +103,10 @@ void app_main(void)
                 if (sx1262_read_payload(buf, &len) == ESP_OK && len > 0) {
                     buf[len] = '\0';
                     ESP_LOGI(TAG, "RX len=%u data=%s", len, (char *)buf);
+                    // Blink LED to indicate data received
+                    gpio_set_level(LED_GPIO, 0); // LED OFF (blink)
+                    vTaskDelay(pdMS_TO_TICKS(50));
+                    gpio_set_level(LED_GPIO, 1); // LED ON (back to idle state)
                 }
             }
             sx1262_clear_irq(irq);

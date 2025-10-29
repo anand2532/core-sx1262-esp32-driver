@@ -229,7 +229,11 @@ bool sx1262_hal_get_busy_level(void)
 
 bool sx1262_hal_get_rst_level(void)
 {
-    return gpio_rst != GPIO_NUM_NC ? gpio_get_level(gpio_rst) : false;
+    if (gpio_rst != GPIO_NUM_NC) {
+        // Just read it - if chip is responding, RST must be HIGH on hardware
+        return gpio_get_level(gpio_rst);
+    }
+    return false;
 }
 
 
