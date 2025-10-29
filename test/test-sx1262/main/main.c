@@ -36,8 +36,12 @@ static void radio_init(void)
     ESP_ERROR_CHECK(sx1262_hal_init(&cfg));
     ESP_ERROR_CHECK(sx1262_driver_init());
 
-    // Match UART module example: 433 MHz, SF10, BW 7.8kHz, CR 4/8, 20 dBm
-    ESP_ERROR_CHECK(sx1262_configure_default(433000000));
+    // Configure to match UART module settings: try 868.1 MHz, SF10, BW 7.8 kHz, CR 4/8, 20 dBm
+    ESP_ERROR_CHECK(sx1262_configure_default(868100000));
+    ESP_ERROR_CHECK(sx1262_set_lora_params(10, SX1262_LORA_BW_7_8, SX1262_LORA_CR_4_8));
+    ESP_ERROR_CHECK(sx1262_set_tx_power(20));
+    // Optional: try private network sync word 0x1424 (common on modules); try 0x3444 if no link
+    ESP_ERROR_CHECK(sx1262_set_sync_word(0x1424));
 }
 
 void app_main(void)
@@ -56,10 +60,15 @@ void app_main(void)
 #else
     uint8_t buf[255];
     uint8_t len = 0;
+    // Clear stale IRQs then enter continuous RX
+    uint16_t stale = sx1262_get_irq();
+    if (stale) { sx1262_clear_irq(stale); }
     ESP_ERROR_CHECK(sx1262_enter_rx(0)); // continuous RX
+    ESP_LOGI(TAG, "RX started (continuous)");
     while (1) {
         uint16_t irq = sx1262_get_irq();
         if (irq) {
+            ESP_LOGI(TAG, "IRQ=0x%04X", irq);
             if (irq & 0x0002) { // RX_DONE
                 if (sx1262_read_payload(buf, &len) == ESP_OK && len > 0) {
                     buf[len] = '\0';
