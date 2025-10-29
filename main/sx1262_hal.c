@@ -44,6 +44,7 @@ esp_err_t sx1262_hal_gpio_init(const sx1262_hal_config_t *config)
     io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
     io_conf.intr_type = GPIO_INTR_DISABLE;
     ESP_ERROR_CHECK(gpio_config(&io_conf));
+    gpio_set_level(config->rxen, 0); // Set LOW initially
     
     // Configure TXEN pin as output
     io_conf.pin_bit_mask = (1ULL << config->txen);
@@ -52,6 +53,7 @@ esp_err_t sx1262_hal_gpio_init(const sx1262_hal_config_t *config)
     io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
     io_conf.intr_type = GPIO_INTR_DISABLE;
     ESP_ERROR_CHECK(gpio_config(&io_conf));
+    gpio_set_level(config->txen, 0); // Set LOW initially
     
     // Configure DIO1 pin as input with interrupt on rising edge
     io_conf.pin_bit_mask = (1ULL << config->dio1);
@@ -184,10 +186,21 @@ void sx1262_hal_wait_busy(void)
 
 void sx1262_hal_reset(void)
 {
+    ESP_LOGI(TAG, "Starting hardware reset sequence...");
+    
+    // Pull RESET LOW for longer duration
     gpio_set_level(gpio_rst, 0);
-    vTaskDelay(pdMS_TO_TICKS(1));  // Wait 1ms
+    ESP_LOGI(TAG, "RST pulled LOW");
+    vTaskDelay(pdMS_TO_TICKS(10));  // Wait 10ms
+    
+    // Release RESET
     gpio_set_level(gpio_rst, 1);
-    vTaskDelay(pdMS_TO_TICKS(100)); // Wait 100ms for reset to complete
+    ESP_LOGI(TAG, "RST released HIGH");
+    vTaskDelay(pdMS_TO_TICKS(150)); // Wait 150ms for reset to complete
+    
+    // Check BUSY pin
+    int busy_level = gpio_get_level(gpio_busy);
+    ESP_LOGI(TAG, "BUSY pin after reset: %d (should be 0)", busy_level);
 }
 
 esp_err_t sx1262_hal_write(uint8_t *buffer, uint8_t size)
