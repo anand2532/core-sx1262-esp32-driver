@@ -43,6 +43,7 @@ extern "C" {
 #define SX1262_OPCODE_GET_PACKET_STATUS           0x14
 #define SX1262_OPCODE_SET_LORA_PACKET_PARAMS      0x8C
 #define SX1262_OPCODE_SET_BUFFER_BASE_ADDRESS     0x8F
+#define SX1262_OPCODE_WRITE_REGISTER               0x0D
 
 /**
  * SX1262 Registers
@@ -111,6 +112,7 @@ uint16_t sx1262_get_irq_status(void);
 esp_err_t sx1262_clear_irq_status(uint16_t irq_mask);
 esp_err_t sx1262_set_dio_irq_params(uint16_t irq_mask);
 esp_err_t sx1262_set_regulator_mode(uint8_t regulator_mode);
+esp_err_t sx1262_set_lora_sync_word(uint16_t sync_word);
 esp_err_t sx1262_get_status(void);
 uint16_t sx1262_get_chip_error(void);
 esp_err_t sx1262_check_status_and_mode(void);
