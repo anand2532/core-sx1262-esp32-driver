@@ -130,6 +130,7 @@ esp_err_t sx1262_set_rx(uint32_t timeout_in_ms)
     // Set RX mode (RXEN HIGH, TXEN LOW) BEFORE sending SET_RX command
     // This ensures the RF switch is in the correct position when chip enters RX mode
     sx1262_hal_set_rx_mode();
+    vTaskDelay(pdMS_TO_TICKS(1)); // Small delay for RF switch to stabilize
     sx1262_hal_transfer(cmd, NULL, sizeof(cmd));
     
     return ESP_OK;
@@ -151,6 +152,7 @@ esp_err_t sx1262_set_tx(uint32_t timeout_in_ms)
     // Set TX mode (TXEN HIGH, RXEN LOW) BEFORE sending SET_TX command
     // This ensures the RF switch is in the correct position when chip enters TX mode
     sx1262_hal_set_tx_mode();
+    vTaskDelay(pdMS_TO_TICKS(1)); // Small delay for RF switch to stabilize
     sx1262_hal_transfer(cmd, NULL, sizeof(cmd));
     
     return ESP_OK;
@@ -220,8 +222,8 @@ uint16_t sx1262_get_irq_status(void)
     // Byte 2: IRQ[7:0]  (low byte)
     uint16_t irq_status = ((uint16_t)rx[1] << 8) | rx[2];
     
-    // Only log if there's an actual IRQ (not 0)
-    if (irq_status != 0) {
+    // Debug logging for unexpected values
+    if (irq_status == 0xA8A8 || irq_status == 0x0000) {
         ESP_LOGD(TAG, "IRQ raw: [0x%02X] [0x%02X] [0x%02X] → IRQ=0x%04X", 
                  rx[0], rx[1], rx[2], irq_status);
     }
