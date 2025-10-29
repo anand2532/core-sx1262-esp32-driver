@@ -139,8 +139,9 @@ esp_err_t lora_init(const lora_config_t *config)
     );
     vTaskDelay(pdMS_TO_TICKS(10));
     
-    // DIO2 as RF switch control (set by many reference designs)
-    uint8_t dio2_cmd[2] = { SX1262_OPCODE_SET_DIO2_AS_RF_SWITCH_CTRL, 0x01 };
+    // DIO2 as RF switch control - DISABLED when using external RXEN/TXEN pins
+    // When using external RF switch control (RXEN/TXEN), DIO2 should NOT control the RF switch
+    uint8_t dio2_cmd[2] = { SX1262_OPCODE_SET_DIO2_AS_RF_SWITCH_CTRL, 0x00 };
     sx1262_hal_transfer(dio2_cmd, NULL, sizeof(dio2_cmd));
     vTaskDelay(pdMS_TO_TICKS(10));
 
@@ -240,8 +241,11 @@ esp_err_t lora_send(uint8_t *data, uint8_t len)
             return ESP_ERR_TIMEOUT;
         } 
         
+        // CRC_ERROR should not happen during TX, but if it does, log once and clear
         if (irq_status & SX1262_IRQ_CRC_ERROR) {
-            ESP_LOGE(TAG, "CRC error on TX");
+            if (timeout == 5000 - 1 || (timeout % 500 == 0)) {  // Log first and then every 5 seconds
+                ESP_LOGW(TAG, "Unexpected CRC error during TX (IRQ=0x%04X)", irq_status);
+            }
             sx1262_clear_irq_status(SX1262_IRQ_CRC_ERROR);
         }
         
@@ -296,7 +300,8 @@ esp_err_t lora_receive(uint8_t *data, uint8_t *len)
     }
     
     // Wait for data to arrive
-    int timeout = 5000;  // 5 second timeout
+    // Note: The chip automatically exits RX mode after the timeout period
+    int timeout = 100;  // Check 100 times (1 second total at 10ms per check)
     while (timeout-- > 0) {
         uint16_t irq_status = sx1262_get_irq_status();
         if (irq_status & SX1262_IRQ_RX_DONE) {
@@ -311,20 +316,20 @@ esp_err_t lora_receive(uint8_t *data, uint8_t *len)
         }
         
         if (irq_status & SX1262_IRQ_TIMEOUT) {
-            ESP_LOGE(TAG, "RX timeout IRQ");
+            ESP_LOGD(TAG, "RX timeout IRQ");
             sx1262_clear_irq_status(SX1262_IRQ_TIMEOUT);
             return ESP_ERR_TIMEOUT;
         }
         
         if (irq_status & SX1262_IRQ_CRC_ERROR) {
-            ESP_LOGE(TAG, "CRC error on RX");
+            ESP_LOGD(TAG, "CRC error on RX (clearing)");
             sx1262_clear_irq_status(SX1262_IRQ_CRC_ERROR);
         }
         
         vTaskDelay(pdMS_TO_TICKS(10));
     }
     
-    ESP_LOGE(TAG, "RX timeout");
+    ESP_LOGD(TAG, "RX timeout");
     return ESP_ERR_TIMEOUT;
 }
 
