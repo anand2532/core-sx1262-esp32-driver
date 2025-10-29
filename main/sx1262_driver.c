@@ -284,6 +284,25 @@ esp_err_t sx1262_set_regulator_mode(uint8_t regulator_mode)
     return ESP_OK;
 }
 
+esp_err_t sx1262_set_lora_sync_word(uint16_t sync_word)
+{
+    uint8_t cmd[3] = {
+        SX1262_OPCODE_WRITE_REGISTER,
+        (uint8_t)(SX1262_REG_LR_SYNC_WORD >> 8),
+        (uint8_t)(SX1262_REG_LR_SYNC_WORD & 0xFF)
+    };
+    sx1262_hal_write(cmd, 3);
+    
+    uint8_t data[2] = {
+        (uint8_t)(sync_word >> 8),
+        (uint8_t)(sync_word & 0xFF)
+    };
+    sx1262_hal_write(data, 2);
+    
+    ESP_LOGI(TAG, "Set LoRa sync word to 0x%04X", sync_word);
+    return ESP_OK;
+}
+
 esp_err_t sx1262_get_status(void)
 {
     uint8_t cmd = SX1262_OPCODE_GET_STATUS;
