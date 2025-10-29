@@ -37,13 +37,15 @@ esp_err_t sx1262_driver_init(void)
     uint8_t base_addr[3] = { SX1262_OPCODE_SET_BUFFER_BASE_ADDRESS, 0x00, 0x00 };
     ESP_ERROR_CHECK(send_simple(base_addr, sizeof(base_addr)));
 
-    // Enable DIO1 for RX_DONE/TX_DONE
+    // Enable DIO1 interrupts for RX_DONE, TX_DONE, TIMEOUT, CRC_ERROR
+    // Irq bits (LSB): bit0=TX_DONE, bit1=RX_DONE, bit2=TIMEOUT, bit3=CRC_ERROR
+    uint8_t irq_lsb = 0x0F;
     uint8_t dio_irq[9] = {
         SX1262_OPCODE_SET_DIO_IRQ_PARAMS,
-        0x00, 0xFF, // IrqMask MSB/LSB: enable all for bring-up
-        0x00, 0xFF, // DIO1 mask
-        0x00, 0x00, // DIO2 mask
-        0x00, 0x00  // DIO3 mask
+        0x00, irq_lsb,      // IrqMask MSB/LSB
+        0x00, irq_lsb,      // Map to DIO1
+        0x00, 0x00,         // DIO2 mask
+        0x00, 0x00          // DIO3 mask
     };
     ESP_ERROR_CHECK(send_simple(dio_irq, sizeof(dio_irq)));
 
@@ -72,11 +74,11 @@ esp_err_t sx1262_configure_default(uint32_t freq_hz)
 {
     ESP_ERROR_CHECK(set_rf_freq(freq_hz));
 
-    // Match UART module: ~2400bps → SF10 + 7.8kHz BW, CR 4/8
-    ESP_ERROR_CHECK(set_lora_mod(10, SX1262_LORA_BW_7_8, SX1262_LORA_CR_4_8));
+    // BW=125kHz, CR=4/5, SF7 defaults
+    ESP_ERROR_CHECK(set_lora_mod(7, SX1262_LORA_BW_125, SX1262_LORA_CR_4_5));
 
-    // TX params: power=20dBm, ramp 40us
-    uint8_t txp[3] = { SX1262_OPCODE_SET_TX_PARAMS, 20, 0x02 };
+    // TX params: power=22dBm, ramp 40us
+    uint8_t txp[3] = { SX1262_OPCODE_SET_TX_PARAMS, 22, 0x02 };
     ESP_ERROR_CHECK(send_simple(txp, sizeof(txp)));
 
     // LoRa packet params: preamble 12, explicit header, payload len 0 (variable), CRC on, IQ normal
@@ -84,6 +86,31 @@ esp_err_t sx1262_configure_default(uint32_t freq_hz)
     ESP_ERROR_CHECK(send_simple(pkt, sizeof(pkt)));
 
     return ESP_OK;
+}
+
+esp_err_t sx1262_set_rf_frequency(uint32_t freq_hz)
+{
+    return set_rf_freq(freq_hz);
+}
+
+esp_err_t sx1262_set_lora_params(uint8_t spreading_factor, uint8_t bandwidth, uint8_t coding_rate)
+{
+    return set_lora_mod(spreading_factor, bandwidth, coding_rate);
+}
+
+esp_err_t sx1262_set_tx_power(uint8_t dbm)
+{
+    uint8_t txp[3] = { SX1262_OPCODE_SET_TX_PARAMS, dbm, 0x02 };
+    return send_simple(txp, sizeof(txp));
+}
+
+esp_err_t sx1262_set_sync_word(uint16_t sync_word)
+{
+    // Write LoRa sync word register 0x0740
+    uint8_t reg_hdr[3] = { SX1262_OPCODE_WRITE_REGISTER, (uint8_t)(SX1262_REG_LR_SYNC_WORD >> 8), (uint8_t)(SX1262_REG_LR_SYNC_WORD) };
+    ESP_ERROR_CHECK(send_simple(reg_hdr, sizeof(reg_hdr)));
+    uint8_t data[2] = { (uint8_t)(sync_word >> 8), (uint8_t)sync_word };
+    return send_simple(data, sizeof(data));
 }
 
 esp_err_t sx1262_write_payload(const uint8_t *data, uint8_t len)
