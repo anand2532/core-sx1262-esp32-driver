@@ -25,6 +25,10 @@ esp_err_t sx1262_driver_init(void)
     uint8_t pkt_type[2] = { SX1262_OPCODE_SET_PACKET_TYPE, 0x01 };
     ESP_ERROR_CHECK(send_simple(pkt_type, sizeof(pkt_type)));
 
+    // Stop timer on SyncWord/Header detection (RX)
+    uint8_t stop_on_preamble[2] = { 0x9F, 0x00 };
+    ESP_ERROR_CHECK(send_simple(stop_on_preamble, sizeof(stop_on_preamble)));
+
     // Regulator mode: DC-DC (0x01) if available; else LDO (0x00)
     uint8_t reg_mode[2] = { SX1262_OPCODE_SET_REGULATOR_MODE, 0x01 };
     ESP_ERROR_CHECK(send_simple(reg_mode, sizeof(reg_mode)));
@@ -81,8 +85,8 @@ esp_err_t sx1262_configure_default(uint32_t freq_hz)
     uint8_t txp[3] = { SX1262_OPCODE_SET_TX_PARAMS, 22, 0x02 };
     ESP_ERROR_CHECK(send_simple(txp, sizeof(txp)));
 
-    // LoRa packet params: preamble 12, explicit header, payload len 0 (variable), CRC on, IQ normal
-    uint8_t pkt[7] = { SX1262_OPCODE_SET_LORA_PACKET_PARAMS, 0x00, 0x0C, 0x00, 0xFF, 0x01, 0x00 };
+    // LoRa packet params: preamble 12, explicit header, payload len 0xFF, CRC OFF, IQ normal
+    uint8_t pkt[7] = { SX1262_OPCODE_SET_LORA_PACKET_PARAMS, 0x00, 0x0C, 0x00, 0xFF, 0x00, 0x00 };
     ESP_ERROR_CHECK(send_simple(pkt, sizeof(pkt)));
 
     return ESP_OK;
@@ -163,10 +167,11 @@ esp_err_t sx1262_read_payload(uint8_t *data, uint8_t *len)
 
 uint16_t sx1262_get_irq(void)
 {
-    uint8_t tx[3] = { SX1262_OPCODE_GET_IRQ_STATUS, 0x00, 0x00 };
-    uint8_t rx[3] = {0};
+    // Send opcode + 3 dummies, read back 4 bytes (status + IRQ[15:8] + IRQ[7:0])
+    uint8_t tx[4] = { SX1262_OPCODE_GET_IRQ_STATUS, 0x00, 0x00, 0x00 };
+    uint8_t rx[4] = {0};
     sx1262_hal_transfer(tx, rx, sizeof(tx));
-    return ((uint16_t)rx[1] << 8) | rx[2];
+    return ((uint16_t)rx[2] << 8) | rx[3];
 }
 
 void sx1262_clear_irq(uint16_t mask)
