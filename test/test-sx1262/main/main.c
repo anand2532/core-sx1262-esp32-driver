@@ -105,6 +105,35 @@ void app_main(void)
     if (stale) { sx1262_clear_irq(stale); }
     ESP_ERROR_CHECK(sx1262_enter_rx(0)); // continuous RX
     ESP_LOGI(TAG, "RX started (continuous)");
+    // One-time diagnostics printout
+    {
+        uint8_t st = sx1262_get_status_raw();
+        uint16_t errs = 0;
+        sx1262_clear_device_errors();
+        sx1262_get_device_errors(&errs);
+        ESP_LOGI(TAG, "Diag: status=0x%02X (mode=%u), device_errors=0x%04X", st, (st >> 4) & 0x07, errs);
+
+        // Read back sync word to confirm register access
+        uint8_t sw[2] = {0};
+        sx1262_read_register(0x0740, sw, 2);
+        ESP_LOGI(TAG, "Diag: SyncWord=0x%02X%02X", sw[0], sw[1]);
+
+        // Try mode transitions: Standby RC -> XOSC -> FS -> back to RC
+        sx1262_set_standby(0);
+        st = sx1262_get_status_raw();
+        ESP_LOGI(TAG, "Diag: after STDBY_RC, mode=%u", (st >> 4) & 0x07);
+        sx1262_set_standby(1);
+        st = sx1262_get_status_raw();
+        ESP_LOGI(TAG, "Diag: after STDBY_XOSC, mode=%u", (st >> 4) & 0x07);
+        sx1262_set_fs();
+        st = sx1262_get_status_raw();
+        ESP_LOGI(TAG, "Diag: after SET_FS, mode=%u", (st >> 4) & 0x07);
+        sx1262_set_standby(0);
+        st = sx1262_get_status_raw();
+        ESP_LOGI(TAG, "Diag: after STDBY_RC again, mode=%u", (st >> 4) & 0x07);
+        // Return to RX
+        sx1262_enter_rx(0);
+    }
     while (1) {
         uint16_t irq = sx1262_get_irq();
         if (irq) {
