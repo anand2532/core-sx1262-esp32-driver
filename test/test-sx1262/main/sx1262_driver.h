@@ -33,6 +33,9 @@ extern "C" {
 #define SX1262_OPCODE_GET_PACKET_STATUS           0x14
 #define SX1262_OPCODE_SET_LORA_PACKET_PARAMS      0x8C
 #define SX1262_OPCODE_SET_BUFFER_BASE_ADDRESS     0x8F
+#define SX1262_OPCODE_SET_FS                      0xC1
+#define SX1262_OPCODE_GET_DEVICE_ERRORS           0x17
+#define SX1262_OPCODE_CLEAR_DEVICE_ERRORS         0x07
 
 #define SX1262_REG_LR_SYNC_WORD                   0x0740
 
@@ -52,6 +55,13 @@ esp_err_t sx1262_set_rf_frequency(uint32_t freq_hz);
 esp_err_t sx1262_set_lora_params(uint8_t spreading_factor, uint8_t bandwidth, uint8_t coding_rate);
 esp_err_t sx1262_set_tx_power(uint8_t dbm);
 esp_err_t sx1262_set_sync_word(uint16_t sync_word);
+esp_err_t sx1262_set_standby(uint8_t mode_rc_or_xosc);
+esp_err_t sx1262_set_fs(void);
+uint8_t  sx1262_get_status_raw(void);
+esp_err_t sx1262_get_device_errors(uint16_t *errors);
+esp_err_t sx1262_clear_device_errors(void);
+esp_err_t sx1262_read_register(uint16_t addr, uint8_t *buf, uint8_t len);
+esp_err_t sx1262_write_register(uint16_t addr, const uint8_t *buf, uint8_t len);
 esp_err_t sx1262_write_payload(const uint8_t *data, uint8_t len);
 esp_err_t sx1262_tx(uint32_t timeout_ms);
 esp_err_t sx1262_enter_rx(uint32_t timeout_ms);
