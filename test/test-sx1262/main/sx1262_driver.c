@@ -122,11 +122,77 @@ esp_err_t sx1262_set_tx_power(uint8_t dbm)
 
 esp_err_t sx1262_set_sync_word(uint16_t sync_word)
 {
-    // Write LoRa sync word register 0x0740
-    uint8_t reg_hdr[3] = { SX1262_OPCODE_WRITE_REGISTER, (uint8_t)(SX1262_REG_LR_SYNC_WORD >> 8), (uint8_t)(SX1262_REG_LR_SYNC_WORD) };
-    ESP_ERROR_CHECK(send_simple(reg_hdr, sizeof(reg_hdr)));
-    uint8_t data[2] = { (uint8_t)(sync_word >> 8), (uint8_t)sync_word };
-    return send_simple(data, sizeof(data));
+    // Write LoRa sync word register 0x0740 in a single transaction
+    uint8_t frame[3 + 2] = {
+        SX1262_OPCODE_WRITE_REGISTER,
+        (uint8_t)(SX1262_REG_LR_SYNC_WORD >> 8),
+        (uint8_t)(SX1262_REG_LR_SYNC_WORD & 0xFF),
+        (uint8_t)(sync_word >> 8),
+        (uint8_t)(sync_word & 0xFF)
+    };
+    return sx1262_hal_transfer(frame, NULL, sizeof(frame));
+}
+
+esp_err_t sx1262_set_standby(uint8_t mode_rc_or_xosc)
+{
+    uint8_t cmd[2] = { SX1262_OPCODE_SET_STANDBY, (mode_rc_or_xosc ? 0x01 : 0x00) };
+    return send_simple(cmd, sizeof(cmd));
+}
+
+esp_err_t sx1262_set_fs(void)
+{
+    uint8_t cmd = SX1262_OPCODE_SET_FS;
+    return send_simple(&cmd, 1);
+}
+
+uint8_t sx1262_get_status_raw(void)
+{
+    uint8_t tx[2] = { SX1262_OPCODE_GET_STATUS, 0x00 };
+    uint8_t rx[2] = {0};
+    sx1262_hal_transfer(tx, rx, sizeof(tx));
+    return rx[0];
+}
+
+esp_err_t sx1262_get_device_errors(uint16_t *errors)
+{
+    if (!errors) return ESP_ERR_INVALID_ARG;
+    uint8_t tx[3] = { SX1262_OPCODE_GET_DEVICE_ERRORS, 0x00, 0x00 };
+    uint8_t rx[3] = {0};
+    esp_err_t ret = sx1262_hal_transfer(tx, rx, sizeof(tx));
+    if (ret != ESP_OK) return ret;
+    *errors = ((uint16_t)rx[1] << 8) | rx[2];
+    return ESP_OK;
+}
+
+esp_err_t sx1262_clear_device_errors(void)
+{
+    uint8_t cmd = SX1262_OPCODE_CLEAR_DEVICE_ERRORS;
+    return send_simple(&cmd, 1);
+}
+
+esp_err_t sx1262_read_register(uint16_t addr, uint8_t *buf, uint8_t len)
+{
+    if (!buf || len == 0) return ESP_ERR_INVALID_ARG;
+    uint8_t tx[4 + 255] = {0};
+    uint8_t rx[4 + 255] = {0};
+    tx[0] = SX1262_OPCODE_READ_REGISTER;
+    tx[1] = (uint8_t)(addr >> 8);
+    tx[2] = (uint8_t)(addr & 0xFF);
+    tx[3] = 0x00; // dummy
+    sx1262_hal_transfer(tx, rx, 4 + len);
+    memcpy(buf, &rx[4], len);
+    return ESP_OK;
+}
+
+esp_err_t sx1262_write_register(uint16_t addr, const uint8_t *buf, uint8_t len)
+{
+    if (!buf || len == 0) return ESP_ERR_INVALID_ARG;
+    uint8_t frame[3 + 255] = {0};
+    frame[0] = SX1262_OPCODE_WRITE_REGISTER;
+    frame[1] = (uint8_t)(addr >> 8);
+    frame[2] = (uint8_t)(addr & 0xFF);
+    memcpy(&frame[3], buf, len);
+    return sx1262_hal_transfer(frame, NULL, 3 + len);
 }
 
 esp_err_t sx1262_write_payload(const uint8_t *data, uint8_t len)
